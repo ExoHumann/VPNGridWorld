@@ -1,144 +1,125 @@
-#######################################################################
-# Copyright (C)                                                       #
-# 2016 Shangtong Zhang(zhangshangtong.cpp@gmail.com)                  #
-# 2016 Kenta Shimada(hyperkentakun@gmail.com)                         #
-# Permission given to modify the code as long as you keep this        #
-# declaration at the top                                              #
-#######################################################################
-
-from __future__ import print_function
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.table import Table
+import pygame as pg
+import sys
 
-WORLD_SIZE = 5
-A_POS = [0, 1]
-A_PRIME_POS = [4, 1]
-B_POS = [0, 3]
-B_PRIME_POS = [2, 3]
-discount = 0.9
+WHITE, GREY, BLACK = (240, 240, 240),  (200, 200, 200), (20, 20, 20)
+YELLOW, RED = (200, 200, 0), (200, 0, 0) 
 
-world = np.zeros((WORLD_SIZE, WORLD_SIZE))
+pg.init()
+pg.display.set_caption('GridWorld')
+# pg.font.init()
 
-# left, up, right, down
-actions = ['L', 'U', 'R', 'D']
+class Screen():
 
-actionProb = []
-for i in range(0, WORLD_SIZE):
-    actionProb.append([])
-    for j in range(0, WORLD_SIZE):
-        actionProb[i].append(dict({'L':0.25, 'U':0.25, 'R':0.25, 'D':0.25}))
-
-nextState = []
-actionReward = []
-for i in range(0, WORLD_SIZE):
-    nextState.append([])
-    actionReward.append([])
-    for j in range(0, WORLD_SIZE):
-        next = dict()
-        reward = dict()
-        if i == 0:
-            next['U'] = [i, j]
-            reward['U'] = -1.0
-        else:
-            next['U'] = [i - 1, j]
-            reward['U'] = 0.0
-
-        if i == WORLD_SIZE - 1:
-            next['D'] = [i, j]
-            reward['D'] = -1.0
-        else:
-            next['D'] = [i + 1, j]
-            reward['D'] = 0.0
-
-        if j == 0:
-            next['L'] = [i, j]
-            reward['L'] = -1.0
-        else:
-            next['L'] = [i, j - 1]
-            reward['L'] = 0.0
-
-        if j == WORLD_SIZE - 1:
-            next['R'] = [i, j]
-            reward['R'] = -1.0
-        else:
-            next['R'] = [i, j + 1]
-            reward['R'] = 0.0
-
-        if [i, j] == A_POS:
-            next['L'] = next['R'] = next['D'] = next['U'] = A_PRIME_POS
-            reward['L'] = reward['R'] = reward['D'] = reward['U'] = 10.0
-
-        if [i, j] == B_POS:
-            next['L'] = next['R'] = next['D'] = next['U'] = B_PRIME_POS
-            reward['L'] = reward['R'] = reward['D'] = reward['U'] = 5.0
-
-        nextState[i].append(next)
-        actionReward[i].append(reward)
-
-
-def draw_image(image):
-    fig, ax = plt.subplots()
-    ax.set_axis_off()
-    tb = Table(ax, bbox=[0,0,1,1])
-
-    nrows, ncols = image.shape
-    width, height = 1.0 / ncols, 1.0 / nrows
-
-    # Add cells
-    for (i,j), val in np.ndenumerate(image):
-        # Index either the first or second item of bkg_colors based on
-        # a checker board pattern
-        idx = [j % 2, (j + 1) % 2][i % 2]
-        color = 'white'
-
-        tb.add_cell(i, j, width, height, text=val, 
-                    loc='center', facecolor=color)
-
-    # Row Labels...
-    for i, label in enumerate(range(len(image))):
-        tb.add_cell(i, -1, width, height, text=label+1, loc='right', 
-                    edgecolor='none', facecolor='none')
-    # Column Labels...
-    for j, label in enumerate(range(len(image))):
-        tb.add_cell(-1, j, width, height/2, text=label+1, loc='center', 
-                           edgecolor='none', facecolor='none')
-    ax.add_table(tb)
-    plt.show()
-
+    def __init__(self, dim):
+        self.size = 24
+        self.W, self.H = dim
+        self.screen = pg.display.set_mode([self.W * self.size, self.H * self.size])
+        self.font = pg.font.Font(None, 25)
+        self.reset()
+        self.update(Vector2D((0,0)), Vector2D((0,0)))
     
-# for figure 3.5
-while True:
-    # keep iteration until convergence
-    newWorld = np.zeros((WORLD_SIZE, WORLD_SIZE))
-    for i in range(0, WORLD_SIZE):
-        for j in range(0, WORLD_SIZE):
-            for action in actions:
-                newPosition = nextState[i][j][action]
-                # bellman equation
-                newWorld[i, j] += actionProb[i][j][action] * (actionReward[i][j][action] + discount * world[newPosition[0], newPosition[1]])
-    if np.sum(np.abs(world - newWorld)) < 1e-4:
-        print('Random Policy')
-        draw_image(np.round(newWorld, decimals=2))
-        break
-    world = newWorld
+    def update(self, pos, before):
+        x, y = before.p
+        self._draw_rect(x, y, BLACK)
+        self._draw_circle(pos)
+    
+    def reset(self):
+        self.screen.fill(WHITE)
+        pg.display.flip()
 
-# for figure 3.8
-world = np.zeros((WORLD_SIZE, WORLD_SIZE))
+        for x in range(self.W):
+            for y in range(self.H):
+                self._draw_rect(x, y, BLACK)
+    
+    def _draw_rect(self, x, y, color):
+        pos = Vector2D((x, y)) * self.size + Vector2D((1, 1))
+        rect = pg.Rect(pos.x, pos.y, self.size-2, self.size-2)
+        pg.draw.rect(self.screen, color, rect, 0)
+        pg.display.update(rect)
+    
+    def _draw_circle(self, pos):
+        center = (pos + Vector2D((-0.5, -0.5))) * self.size
+        pg.draw.circle(self.screen, WHITE, center, 20)
+
+
+class Vector2D():
+
+	def __init__(self, point):
+		self.x, self.y = point
+		self.p = self.y, self.x  # State indexing
+
+	def __repr__(self):
+		return str((self.x, self.y))
+
+	def __add__(self, o):
+		return Vector2D((self.x + o.x, self.y + o.y))
+
+	def __mul__(self, k):
+		return Vector2D((k*self.x, k*self.y))
+
+	# def __rmul__(self, o):
+	# 	return self.x*o.x + self.y*o.y
+
+	def __eq__(self, o):
+		return self.x == o.x and self.y == o.y
+
+class GridWorld():
+
+    def __init__(self, size=(5, 5), start=(0,0), end=None, render=False):
+        self.W, self.H = size
+        self.pos = Vector2D(start)
+        self.end = Vector2D(size)
+        self.render = render
+
+        self.board = np.zeros((size), dtype=int)
+
+        # self.directions = [Vector2D((1, 0)), Vector2D((1, -1)), Vector2D((0, -1)),  # RIGHT, RIGHT-UP, UP
+		# 				   Vector2D((-1, -1)), Vector2D((-1, 0)), Vector2D((-1, 1)), # LEFT-UP, LEFT, LEFT-DOWN
+        #                    Vector2D((0, 1)), Vector2D((1, 1))]  # DOWN, RIGHT-DOWN
+        self.directions = [Vector2D((1, 0)), Vector2D((0, -1)),  # RIGHT, UP
+						   Vector2D((-1, 0)), Vector2D((0, 1))]  # LEFT, DOWN
+        
+        self.screen = Screen(size)
+        
+    def step(self, action):
+        new_pos = self.pos + self.directions[action]
+        terminate = new_pos.x < 0 or new_pos.x >= self.W or new_pos.y < 0 or new_pos.y >= self.H
+
+        if not terminate:
+            self.pos = new_pos
+
+            # if self.render:
+
+    def process_input(self):
+		# event = pg.event.wait()
+        for event in pg.event.get():
+            if event.type == pg.QUIT:
+                pg.display.quit()
+                pg.quit()
+                sys.exit()
+
+            elif event.type == pg.KEYDOWN:
+                if event.key == pg.K_ESCAPE:
+                    pg.display.quit()
+                    pg.quit()
+                    sys.exit()
+
+                if event.key == pg.K_r:
+                    self.reset()
+                if event.key == pg.K_SPACE:
+                    self.rendering = not self.rendering
+                    if self.rendering:
+                        self.screen.reset(self, self.fruit)
+
+                    if event.key in MOVE:
+                        self.step(MOVE.index(event.key))
+
+MOVE = [pg.K_RIGHT, pg.K_UP, pg.K_LEFT, pg.K_DOWN]
+
+GW = GridWorld()
+
 while True:
-    # keep iteration until convergence
-    newWorld = np.zeros((WORLD_SIZE, WORLD_SIZE))
-    for i in range(0, WORLD_SIZE):
-        for j in range(0, WORLD_SIZE):
-            values = []
-            for action in actions:
-                newPosition = nextState[i][j][action]
-                # value iteration
-                values.append(actionReward[i][j][action] + discount * world[newPosition[0], newPosition[1]])
-            newWorld[i][j] = np.max(values)
-    if np.sum(np.abs(world - newWorld)) < 1e-4:
-        print('Optimal Policy')
-        draw_image(np.round(newWorld, decimals=2))
-        break
-    world = newWorld
+    GW.process_input()
+
 
