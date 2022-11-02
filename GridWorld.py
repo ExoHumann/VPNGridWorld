@@ -4,6 +4,9 @@
     Common bugs
     -  "list index out of range" => random.randint(a, b) is inclusive [a, b] as opposed to exlusive [a, b) as in numpy
 
+    TODO
+    - Update self.grid w.r.t. agent position, i.e self.pos (remember to change back)
+
 """
 
 
@@ -21,9 +24,10 @@ COLORS = [BLACK, YELLOW, WHITE, GREEN]  # empty, wall, goal
 
 MOVE = [pg.K_d, pg.K_e, pg.K_w, pg.K_q,  #RIGHT, RIGHT_UP, UP, LEFT-UP
         pg.K_a, pg.K_z, pg.K_s, pg.K_c]  #LEFT, LEFT-DOWN, DOWN, RIGHT-DOWN 
-EMPTY, WALL, AGENT, GOAL = range(4)
+NUM_ENTITIES= 4        
+EMPTY, WALL, AGENT, GOAL = range(NUM_ENTITIES)
 
-# pg.init()
+pg.init()
 pg.display.set_caption('GridWorld')
 # pg.font.init()
 
@@ -153,7 +157,7 @@ class GridWorld():
         # {0:empty, 1:wall, 2:goal}
         # self.done = False
         self.grid, start, goal, path = self._generate_grid()
-        self.observation_space = spaces.Box(0, 2, shape=self.grid.shape, dtype=int)
+        self.observation_space = spaces.Box(0, NUM_ENTITIES-1, shape=self.grid.shape, dtype=int)
         self.pos = start
         self.goal = goal
             
@@ -312,7 +316,7 @@ class GridWorld():
                     
 
 if __name__ == "__main__":
-    env = GridWorld(seed=42, wall_pct=0.5, space_fun=GridWorld.test)
+    env = GridWorld(seed=42, wall_pct=0.5, render=False, space_fun=GridWorld.test)
     while True:
         obs = env.process_input()
         if obs:
