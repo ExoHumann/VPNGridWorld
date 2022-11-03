@@ -2,11 +2,10 @@
     Run this script for human play
 
     Common bugs
-    -  "list index out of range" => random.randint(a, b) is inclusive [a, b] as opposed to exlusive [a, b) as in numpy
+    - "list index out of range" => random.randint(a, b) is inclusive so replace b with b-1. 
 
     TODO
-    - Update self.grid w.r.t. agent position, i.e self.pos (remember to change back)
-
+    - ???
 """
 
 
@@ -32,8 +31,8 @@ pg.display.set_caption('GridWorld')
 # pg.font.init()
 
 class Vec2D():
-    # Helper struct for flipping coordinates and basic arithmetic.
-    # pygame draws by (x, y) and numpy indexes by (y, x).
+    """ Helper class for flipping coordinates and basic arithmetic.
+    pygame draws by v=(x, y) and numpy indexes by p=(y, x)."""
 
     def __init__(self, x, y=0):
         if type(x) != tuple:
@@ -79,7 +78,7 @@ class Vec2D():
       return hash((self.x, self.y))
 
 class Display():
-    # Handles all rendering
+    """Handles all rendering"""
 
     def __init__(self, grid, start, path=None):
         self.grid = grid
@@ -109,7 +108,7 @@ class Display():
     
     def draw_path(self):
         for p in self.path:
-            self._draw_circle(p, CELL >> 3)  # x >> 2 = x / 8
+            self._draw_circle(p, CELL >> 3)  # x >> 3 = x / 8
 
     def _draw_rect(self, pos, color):
         pos = pos * CELL + Vec2D(1, 1)
@@ -125,16 +124,40 @@ class Display():
     
 
 class GridWorld():
-    """ Gridworld environment
-    8 actions {0:Right, 1:RIGHT-UP, 2:UP, 3:LEFT-UP, 4:LEFT, 
-              5:LEFT-DOWN, 6:DOWN, 7:RIGHT-DOWN}
-    grid {0:Empty, 1:Wall, 2:Agent, 3:Goal)
+    """Gridworld environment following OpenAI functionality
+
+    Helper class Vec2D alleviates syntax strain from numpy indexing by (y, x),
+    while pygame instances rects for drawing by (x, y). All rendering is performed
+    in helper class Display. 
+
+    Methods:
+    reset()         -- Reset all class properties to initial values and generate new grid.
+    step(action)    -- Take action in environment and return new grid, reward and done.
+    sample()        -- Return a random action. Equivalent to action_space.sample(), but returns non-termination actions.
+    close()         -- Quit pygame and if this script is main, terminates script.
+    process_input() -- Process input using pygame.
+
+    Important variables:
+    grid         -- 2d nparray of map with nominal values {0:Empty, 1:Wall, 2:Agent, 3:Goal).
+    done         -- bool flag of game termination state.
+    action_space -- Discrete of {0:Right, 1:Right-Up, 2:Up, 3:Left-Up, 4:Left, 5:Left-Down, 6:Down, 7:Right-Down}.
+    pos          -- Vec2D of current position of agent.
+    goal         -- Vec2D of goal position.
     """
 
     def test(self):
-        print(self.observation_space)
+        print(self._AStar.__doc__)
 
-    def __init__(self, map_size=(5, 10, 5, 10), wall_pct=0.7, render=True, seed=None, space_fun=None):
+    def __init__(self, map_size=(5, 10, 5, 10), wall_pct=0.7, rewards=(-1.0, 10.0),
+                render=True, seed=None, space_fun=None):
+        """
+        Keyword arguments:
+        map_size  -- int tuple of (min_x, max_x, min_y, max_y) constraining map size.
+        wall_pct  -- float of wall density in grid.
+        rewards   -- float tuple (step_penality, win_reward) rewards given after step.
+        seed      -- int seed for grid generation and action sampling.
+        space_fun -- function to execute. Used for debugging. 
+        """
         self.map_size = map_size
         self.wall_pct = wall_pct
         self.render = render
@@ -147,58 +170,73 @@ class GridWorld():
                      Vec2D(-1,0), Vec2D(-1,1), # LEFT, LEFT-DOWN
                      Vec2D(0, 1), Vec2D(1, 1)] # DOWN, RIGHT-DOWN
         
+        self.step_penalty, self.win_reward = rewards
+        
         self.action_space = spaces.Discrete(len(self.DIRS))
         # observation_space defined in reset()
         
         self.reset()
     
     def reset(self):
-        # Generate new grid
-        # {0:empty, 1:wall, 2:goal}
-        # self.done = False
-        self.grid, start, goal, path = self._generate_grid()
+        """Reset class properties"""
+        self.done = False
+        self.grid, start, goal, path = self._generate_grid(self.wall_pct)
         self.observation_space = spaces.Box(0, NUM_ENTITIES-1, shape=self.grid.shape, dtype=int)
         self.pos = start
         self.goal = goal
             
-        assert(self.grid[self.pos.p] == AGENT), f"Improper starting tile"
+        assert(self.grid[self.pos.p] == AGENT), 'Improper starting tile'
         if self.render:
             self.display = Display(self.grid, self.pos, path)
 
         return self.grid
     
     def step(self, action):
+        """Take action and return new grid, reward and done """
+        # Let terminate = done to reset env after failure
         err_msg = f"{action!r} ({type(action)}) invalid"
         assert self.action_space.contains(action), err_msg
 
-        done = False
-        reward = 0
+        reward = self.step_penalty
+        
 
         new_pos = self.pos + self.DIRS[action]
         
         terminate = self._is_collide(new_pos, self.grid)
+        # done = terminate
         if not terminate:
             if self.grid[new_pos.p] == GOAL:
-                # print("GOOOAL")
-                done = True
+                self.done = True
+                reward = self.win_reward
             if self.render:
                 self.display.update(new_pos, self.pos)
 
+            # Update state
+            self.grid[self.pos.p], self.grid[new_pos.p] = EMPTY, AGENT
             self.pos = new_pos
-        return self.grid, reward, done
+
+        return self.grid, reward, self.done
     
-    def sample(self, legal_only=False):
-        # Todo: Use gyms action space instead
-        if legal_only:
-            legal_actions = list(filter(lambda dir: not self._is_collide(self.pos + dir, self.grid), self.DIRS))
-            action = random.choice(legal_actions)
-            return self.DIRS.index(action)
-        return random.randint(0, len(self.DIRS)-1)
+    def sample(self):
+        """Return random action in action_space"""
+        # if legal_only:
+        legal_actions = list(filter(lambda dir: not self._is_collide(self.pos + dir, self.grid), self.DIRS))
+        action = random.choice(legal_actions)
+        return self.DIRS.index(action)
+        # return random.randint(0, len(self.DIRS)-1)
+    
+    def close(self):
+        """Quit pygame and if this script is main, terminates script."""
+        pg.display.quit()
+        pg.quit()
+        if __name__ == "__main__": sys.exit()
         
-    def _generate_grid(self):
-        # Tries 100 times to solve a randomly generated grid using wall percentage
-        # Sprinkling: https://github.com/facebookarchive/MazeBase/blob/master/py/mazebase/utils/creationutils.py
-        # @ Returns: (nparray, tuple) a randomly generated grid and starting position
+    def _generate_grid(self, wall_pct=0.5):
+        """
+        Generate 100 grids sprinkled by wall_pct argument density.
+        Raise error after 100 iterations of unsolvable grids,
+        otherwise returns nparray grid and starting position tuple
+        """
         
         for _ in range(100):
             # Initialize randomly sized grid
@@ -225,27 +263,21 @@ class GridWorld():
 	               "size is probably too small")
     
     def _random_tile(self, n=1):
-        # Unique elements
-        # returns random Vec2D(x, y) list
+        """Return random unique Vec2D tile"""
         rand = lambda: Vec2D(random.randint(0, self.W-1), random.randint(0, self.H-1))  # random.randint is inclusive!!!
         rs = {rand()}
         while len(rs) != n:
             rs.add(rand())
         return list(rs)  
     
-    def get_neighbors(self, n, grid):
-        """ return neigboring nodes
-        @params: Vec2D of node,
-                nparray of grid
-        @returns: Vec2D list
-        """
+    def _get_neighbors(self, n, grid):
+        """ Return neigboring reachable Vec2D list of nodes to node Vec2D n"""
         neighbors = [n + d for d in self.DIRS]
         filtered = list(filter(lambda neighbor: not self._is_collide(neighbor, grid), neighbors))
         return filtered
     
     def _AStar(self, grid, start, goal):
-        """AStart algoritm to quickly solve grid.
-            Uncomment came_from to return path and/or set a distance function based on rewards (currently 1)
+        """AStar to quickly solve grid. 'n' refers to a node in the maze.  
             @returns: Vec2D list of shortest path or None if unsolvable
         """
         h = lambda n: max(abs(goal - n))  # Heuristic function "bird flight with diagonal movement
@@ -254,7 +286,7 @@ class GridWorld():
         open_set = {start}  # Unvisited nodes
         came_from = {}  # Path tracking
 
-        g_score = defaultdict(lambda: sys.maxsize) # Cost of reaching n
+        g_score = defaultdict(lambda: sys.maxsize) # Cost of reaching n from start
         g_score[start] = 0
 
         f_score = defaultdict(lambda: sys.maxsize)  # g_score[n] + h(n)
@@ -266,7 +298,7 @@ class GridWorld():
                 return self._reconstruct_path(came_from, current)  # Shortest path
         
             open_set.discard(current)
-            for neighbor in self.get_neighbors(current, grid):
+            for neighbor in self._get_neighbors(current, grid):
                 tentative_gscore = g_score[current] + 1  # gScore[current] + d(current, neighbor) (d = 1)
                 if tentative_gscore < g_score[neighbor]:
                 # This path to neighbor is better than any previous one. Record it!
@@ -286,16 +318,12 @@ class GridWorld():
         return total_path
     
     def _is_collide(self, new_pos, grid):
-        # Out of bounds or collide with wall
+        """Returns if new_pos Vec2D is out of bounds of nparray grid or colliding with wall"""
         return new_pos.x < 0 or new_pos.x >= self.W or new_pos.y < 0 or \
-               new_pos.y >= self.H or grid[new_pos.p] == WALL  # 1:Wall
+               new_pos.y >= self.H or grid[new_pos.p] == WALL
     
-    def close(self):
-        pg.display.quit()
-        pg.quit()
-        sys.exit()
-
     def process_input(self):
+        """Process user input quit/restart/step/space"""
         for event in pg.event.get():
             if event.type == pg.QUIT:
                 self.close()
@@ -316,12 +344,13 @@ class GridWorld():
                     
 
 if __name__ == "__main__":
-    env = GridWorld(seed=42, wall_pct=0.5, render=False, space_fun=GridWorld.test)
+    env = GridWorld(seed=None, wall_pct=0.5, render=True, space_fun=GridWorld.test)
     while True:
         obs = env.process_input()
         if obs:
             s, r, done = obs
+            print(s)
             if done:
-                env.reset()
+                print(env.reset())
 
 
