@@ -3,6 +3,7 @@
 
     Common bugs
     - "list index out of range" => random.randint(a, b) is inclusive so replace b with b-1. 
+    - Improper grid udating when moving agent about
 
     TODO
     - ???
@@ -19,12 +20,10 @@ from collections import defaultdict
 CELL = 48 # Cell width TODO: Makes dependent on map_size but still global...
 WHITE, GREY, BLACK = (200, 200, 200),  (190, 190, 190), (20, 20, 20)
 YELLOW, RED, GREEN = (150, 150, 0), (200, 0, 0), (0, 150, 0)
-COLORS = [BLACK, YELLOW, BLACK, GREEN]  # empty, wall, goal
+COLORS = [BLACK, YELLOW, BLACK, GREEN]  # empty, wall, _, goal
 
 MOVE = [pg.K_d, pg.K_e, pg.K_w, pg.K_q,  #RIGHT, RIGHT_UP, UP, LEFT-UP
         pg.K_a, pg.K_z, pg.K_s, pg.K_c]  #LEFT, LEFT-DOWN, DOWN, RIGHT-DOWN 
-# MOVE = [pg.K_d, pg.K_w, pg.K_a, pg.K_s,  #RIGHT, UP, LEFT, DOWN
-#         pg.K_e, pg.K_q, pg.K_z, pg.K_c]  #RIGHT_UP, LEFT-UP, LEFT-DOWN, RIGHT-DOWN 
 NUM_ENTITIES= 4        
 EMPTY, WALL, AGENT, GOAL = range(NUM_ENTITIES)
 
@@ -82,21 +81,24 @@ class Vec2D():
 class Display():
     """Handles all rendering"""
 
-    def __init__(self, grid, start, path=None):
+    def __init__(self, grid, start, goal, path=None):
         self.grid = grid
         self.H, self.W = grid.shape
         self.path = path
         self.screen = pg.display.set_mode([self.W * CELL, self.H * CELL])
         self.font = pg.font.Font(None, 25)
-        self.reset(start)
+        self.reset(start, goal)
 
     def update(self, pos, before):
+        self.grid[before.p] = EMPTY if before != self.goal else GOAL
+        self.grid[pos.p] = AGENT
         self._draw_rect(before, COLORS[self.grid[before.p]])    # Draw prior object
-        if self.path and before in self.path: # Draw path point
+        if self.path and before in self.path:                   # Draw path point
             self._draw_circle(before, CELL >> 3)
         self._draw_circle(pos, CELL >> 2)  # x >> 2 = x / 4     # Draw agent
     
-    def reset(self, start):
+    def reset(self, start, goal):
+        self.goal = goal
         self.screen.fill(GREY)
         pg.display.flip()
 
@@ -105,7 +107,8 @@ class Display():
                 pos = Vec2D(x, y)
                 color = COLORS[self.grid[pos.p]]
                 self._draw_rect(pos, color)
-        self.draw_path()
+        if self.path:
+            self.draw_path()
         self._draw_circle(start, CELL >> 2)  # Starting pos
     
     def draw_path(self):
@@ -134,7 +137,10 @@ class Display():
                 if self.grid[y, x] == WALL:
                     continue
                 pos = Vec2D(x, y)
-                text = self.font.render(str(V[pos.p]), True, WHITE)
+                if self.grid[y, x] == GOAL:
+                    text = self.font.render('GOAL', True, WHITE)
+                else:
+                    text = self.font.render(str(V[pos.p]), True, WHITE)
                 self._draw_rect(pos, BLACK)
                 self._draw_text(text, pos)
                 
@@ -178,8 +184,8 @@ class GridWorld():
     def test(self):
         pass
 
-    def __init__(self, map_size=(5, 10, 5, 10), wall_pct=0.7, rewards=(0.0, 10.0),
-                render=True, seed=None, space_fun=None):
+    def __init__(self, map_size=(5, 10, 5, 10), wall_pct=0.7, rewards=(0.0, 1.0),
+                render=True, seed=None, non_diag=False, space_fun=None):
         """
         Keyword arguments:
         map_size  -- int tuple of (min_x, max_x, min_y, max_y) constraining map size.
@@ -195,14 +201,14 @@ class GridWorld():
             random.seed(seed)
         self.space_fun = space_fun if space_fun else lambda: None
 
-        self.DIRS = [Vec2D(1, 0), Vec2D(1,-1), # RIGHT, RIGHT-UP
-                     Vec2D(0,-1),Vec2D(-1,-1), # UP, LEFT-UP
-                     Vec2D(-1,0), Vec2D(-1,1), # LEFT, LEFT-DOWN
-                     Vec2D(0, 1), Vec2D(1, 1)] # DOWN, RIGHT-DOWN
-        # self.DIRS = [Vec2D(1, 0), Vec2D(0,-1), # RIGHT, UP
-        #              Vec2D(-1,0), Vec2D(0, 1), # LEFT, DOWN
-        #              Vec2D(1,-1),Vec2D(-1,-1), # RIGHT-UP, LEFT-UP
-        #              Vec2D(-1,1), Vec2D(1, 1)] # LEFT-DOWN, RIGHT-DOWN
+        if not non_diag:
+            self.DIRS = [Vec2D(1, 0), Vec2D(1,-1), # RIGHT, RIGHT-UP
+                        Vec2D(0,-1),Vec2D(-1,-1), # UP, LEFT-UP
+                        Vec2D(-1,0), Vec2D(-1,1), # LEFT, LEFT-DOWN
+                        Vec2D(0, 1), Vec2D(1, 1)] # DOWN, RIGHT-DOWN
+        else:
+            self.DIRS = [Vec2D(1, 0), Vec2D(0,-1), # RIGHT, UP
+                         Vec2D(-1,0), Vec2D(0, 1)] # LEFT, DOWN
         
         self.step_penalty, self.win_reward = rewards
         
@@ -219,19 +225,33 @@ class GridWorld():
             
         assert(self.grid[self.pos.p] == AGENT), 'Improper starting tile'
         if self.render:
-            self.display = Display(self.grid, self.pos, path)
+            self.display = Display(self.grid, self.pos, goal, path)
+
+        return self.grid
+    
+    def reset_to(self, grid, start, goal):
+        """Set environment to ndarray grid, tuple start and goal"""
+        self.done = False
+        self.grid = grid
+        self.H, self.W = grid.shape
+        self.observation_space = spaces.Box(0, NUM_ENTITIES-1, shape=self.grid.shape, dtype=int)
+        self.pos = Vec2D(start)
+        self.goal = Vec2D(goal)
+            
+        assert(self.grid[self.pos.p] == AGENT), 'Improper starting tile'
+        assert(self.grid[self.goal.p] == GOAL), 'Improper goal tile'
+        if self.render:
+            self.display = Display(self.grid, self.pos, goal)
 
         return self.grid
     
     def step(self, action):
-        """Take action and return new state (y, x), reward and done """
+        """Take action and return new state (y, x), reward and done 
+        Mutate pos, done, grid and display consequence."""
         # Let terminate = done to reset env after failure
-        err_msg = f"{action!r} ({type(action)}) invalid"
-        assert self.action_space.contains(action), err_msg
+        assert self.action_space.contains(action), f"{action!r} ({type(action)}) invalid"
 
         reward = self.step_penalty
-        
-
         new_pos = self.pos + self.DIRS[action]
         
         terminate = self._is_collide(new_pos, self.grid)
@@ -240,12 +260,14 @@ class GridWorld():
             if self.grid[new_pos.p] == GOAL:
                 self.done = True
                 reward = self.win_reward
-            if self.render:
-                self.display.update(new_pos, self.pos)
+            # if self.render:
+            #     self.display.update(new_pos, self.pos)
 
-            # Update state
-            self.grid[self.pos.p], self.grid[new_pos.p] = EMPTY, AGENT
+            # Update grid
+            self.grid[self.pos.p] = GOAL if self.pos == self.goal else EMPTY
+            self.grid[new_pos.p] = AGENT
             self.pos = new_pos
+            
 
         return self.pos.p, reward, self.done
     
@@ -381,7 +403,10 @@ class GridWorld():
         self.display.update_values(V)
     
     def set_pos(self, x, y):
+        self.grid[self.pos.p] = GOAL if self.pos == self.goal else EMPTY
         self.pos = Vec2D(x, y)
+        self.grid[self.pos.p] = AGENT
+        
 
 
                     
@@ -394,8 +419,8 @@ if __name__ == "__main__":
         obs = env.process_input()
         if type(obs) == tuple:  # step return
             s, r, done = obs
-            if done:
-                s = env.reset()
+            # if done:
+            #     s = env.reset()
         elif type(obs) == np.ndarray:  # reset return
             grid = obs
 
