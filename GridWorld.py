@@ -19,16 +19,18 @@ from collections import defaultdict
 CELL = 48 # Cell width TODO: Makes dependent on map_size but still global...
 WHITE, GREY, BLACK = (200, 200, 200),  (190, 190, 190), (20, 20, 20)
 YELLOW, RED, GREEN = (150, 150, 0), (200, 0, 0), (0, 150, 0)
-COLORS = [BLACK, YELLOW, WHITE, GREEN]  # empty, wall, goal
+COLORS = [BLACK, YELLOW, BLACK, GREEN]  # empty, wall, goal
 
 MOVE = [pg.K_d, pg.K_e, pg.K_w, pg.K_q,  #RIGHT, RIGHT_UP, UP, LEFT-UP
         pg.K_a, pg.K_z, pg.K_s, pg.K_c]  #LEFT, LEFT-DOWN, DOWN, RIGHT-DOWN 
+# MOVE = [pg.K_d, pg.K_w, pg.K_a, pg.K_s,  #RIGHT, UP, LEFT, DOWN
+#         pg.K_e, pg.K_q, pg.K_z, pg.K_c]  #RIGHT_UP, LEFT-UP, LEFT-DOWN, RIGHT-DOWN 
 NUM_ENTITIES= 4        
 EMPTY, WALL, AGENT, GOAL = range(NUM_ENTITIES)
 
 pg.init()
 pg.display.set_caption('GridWorld')
-# pg.font.init()
+pg.font.init()
 
 class Vec2D():
     """ Helper class for flipping coordinates and basic arithmetic.
@@ -85,7 +87,7 @@ class Display():
         self.H, self.W = grid.shape
         self.path = path
         self.screen = pg.display.set_mode([self.W * CELL, self.H * CELL])
-        # self.font = pg.font.Font(None, 25)
+        self.font = pg.font.Font(None, 25)
         self.reset(start)
 
     def update(self, pos, before):
@@ -121,6 +123,34 @@ class Display():
         rect = pg.draw.circle(self.screen, GREY, center.v, r)  
         pg.display.update(rect)
     
+    # ---- Value iteration ----
+    def update_values(self, V):
+        """Remove game elements and impose nparray V over grid"""
+        assert self.grid.shape == V.shape, f"Array dimensions don't match (grid) \
+                                            {self.grid.shape} != {V.shape} (V)"
+        V = np.round(V, 2)
+        for x in range(self.W):
+            for y in range(self.H):
+                if self.grid[y, x] == WALL:
+                    continue
+                pos = Vec2D(x, y)
+                text = self.font.render(str(V[pos.p]), True, WHITE)
+                self._draw_rect(pos, BLACK)
+                self._draw_text(text, pos)
+                
+        # pg.display.flip()
+    
+    def _draw_text(self, text, pos):
+        center = (pos + Vec2D(0.5, 0.5)) * CELL
+        text_rect = text.get_rect(center=center.v) 
+        self.screen.blit(text, text_rect)
+        pg.display.update(text_rect)
+
+        
+
+
+
+    
     
 
 class GridWorld():
@@ -146,9 +176,9 @@ class GridWorld():
     """
 
     def test(self):
-        print(self._AStar.__doc__)
+        pass
 
-    def __init__(self, map_size=(5, 10, 5, 10), wall_pct=0.7, rewards=(-1.0, 10.0),
+    def __init__(self, map_size=(5, 10, 5, 10), wall_pct=0.7, rewards=(0.0, 10.0),
                 render=True, seed=None, space_fun=None):
         """
         Keyword arguments:
@@ -169,14 +199,16 @@ class GridWorld():
                      Vec2D(0,-1),Vec2D(-1,-1), # UP, LEFT-UP
                      Vec2D(-1,0), Vec2D(-1,1), # LEFT, LEFT-DOWN
                      Vec2D(0, 1), Vec2D(1, 1)] # DOWN, RIGHT-DOWN
+        # self.DIRS = [Vec2D(1, 0), Vec2D(0,-1), # RIGHT, UP
+        #              Vec2D(-1,0), Vec2D(0, 1), # LEFT, DOWN
+        #              Vec2D(1,-1),Vec2D(-1,-1), # RIGHT-UP, LEFT-UP
+        #              Vec2D(-1,1), Vec2D(1, 1)] # LEFT-DOWN, RIGHT-DOWN
         
         self.step_penalty, self.win_reward = rewards
         
         self.action_space = spaces.Discrete(len(self.DIRS))
         # observation_space defined in reset()
         
-        self.reset()
-    
     def reset(self):
         """Reset class properties"""
         self.done = False
@@ -192,7 +224,7 @@ class GridWorld():
         return self.grid
     
     def step(self, action):
-        """Take action and return new grid, reward and done """
+        """Take action and return new state (y, x), reward and done """
         # Let terminate = done to reset env after failure
         err_msg = f"{action!r} ({type(action)}) invalid"
         assert self.action_space.contains(action), err_msg
@@ -215,7 +247,7 @@ class GridWorld():
             self.grid[self.pos.p], self.grid[new_pos.p] = EMPTY, AGENT
             self.pos = new_pos
 
-        return self.grid, reward, self.done
+        return self.pos.p, reward, self.done
     
     def sample(self):
         """Return random action in action_space"""
@@ -225,11 +257,11 @@ class GridWorld():
         return self.DIRS.index(action)
         # return random.randint(0, len(self.DIRS)-1)
     
-    def close(self):
-        """Quit pygame and if this script is main, terminates script."""
+    def close(self, total=False):
+        """Quit pygame and script if total is flagged true."""
         pg.display.quit()
         pg.quit()
-        if __name__ == "__main__": sys.exit()
+        if total: sys.exit()
         
     def _generate_grid(self, wall_pct=0.5):
         """
@@ -280,8 +312,8 @@ class GridWorld():
         """AStar to quickly solve grid. 'n' refers to a node in the maze.  
             @returns: Vec2D list of shortest path or None if unsolvable
         """
-        h = lambda n: max(abs(goal - n))  # Heuristic function "bird flight with diagonal movement
-        # h = lambda n: abs(goal - n).sum   # Cartesian movement
+        # h = lambda n: max(abs(goal - n))  # Heuristic function "bird flight with diagonal movement
+        h = lambda n: abs(goal - n).sum   # Cartesian movement (proper planning)
 
         open_set = {start}  # Unvisited nodes
         came_from = {}  # Path tracking
@@ -329,28 +361,42 @@ class GridWorld():
                 self.close()
             
             elif event.type == pg.KEYDOWN:
-                if event.key == pg.K_ESCAPE:
-                    self.close()
+                if event.key == pg.K_ESCAPE:                
+                    self.close(True)
 
                 if event.key == pg.K_r:
-                    self.reset()
+                    return self.reset()
 
                 if event.key in MOVE:
                     return self.step(MOVE.index(event.key))
                 
                 if event.key == pg.K_SPACE:
-                    self.space_fun(self)
+                    try:
+                        self.space_fun(self)
+                    except:
+                        self.space_fun()  # For external functions
+    
+    # ---- Value iteration ----
+    def display_values(self, V):
+        self.display.update_values(V)
+    
+    def set_pos(self, x, y):
+        self.pos = Vec2D(x, y)
+
+
                     
                     
 
 if __name__ == "__main__":
-    env = GridWorld(seed=None, wall_pct=0.5, render=True, space_fun=GridWorld.test)
+    env = GridWorld(seed=9, wall_pct=0.5, render=True, space_fun=GridWorld.test)
+    env.reset()
     while True:
         obs = env.process_input()
-        if obs:
+        if type(obs) == tuple:  # step return
             s, r, done = obs
-            print(s)
             if done:
-                print(env.reset())
+                s = env.reset()
+        elif type(obs) == np.ndarray:  # reset return
+            grid = obs
 
 
