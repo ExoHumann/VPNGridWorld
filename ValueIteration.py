@@ -18,28 +18,27 @@ def go():
     V_new = V.copy()
     for y in range(H):
         for x in range(W):
-            if grid[y, x] in [1, 3]:
-                continue  # Skip walls
-            # if abs(env.goal.y - y) > 1 or abs(env.goal.x - x) > 1:
-            #     continue
+            if grid[y, x] in [1,3]:
+                continue  # Skip walls, and goal
 
             # Try all actions and update using max expected reward
-            rs, vs = [], []
             for a in range(env.action_space.n):
-                env.set_pos(x, y)  # Reset position
-                s, r, _ = env.step(a)
-                rs.append(r); vs.append(V[s])
-            rs, vs = np.array(rs), np.array(vs)
-            a = np.argmax(rs + gamma*vs)         # Isolate best action
-            V_new[y, x] = rs[a] + gamma * vs[a]  # Bellmans expectation
+                env.set_pos(x, y)               # Reset position
+                s1, r1, _ = env.step(a)         # Take action
+                Q[y, x, a] = r1 + gamma * V[s1] # Belmann's expectation equation
+            V_new[y, x] = max(Q[y, x, :])       # Max valued across actions
     V = V_new
     env.display_values(V)
 
-env = GridWorld(wall_pct=0.5, seed=42,render=True, non_diag=True, space_fun=go)
+env = GridWorld(wall_pct=0.5, seed=42, render=True, non_diag=True, space_fun=go)
 # grid = env.reset()
-grid = env.reset_to(TUHE, (5, 0), (5, 9))
+grid = env.reset_to(TUHE)
 H, W = grid.shape
-V = np.zeros((H, W))
+# V = np.random.uniform(-10, 10, (H, W))
+V = np.zeros(grid.shape)
+V = np.ones(grid.shape) * 2
+V[tuple(*np.argwhere(TUHE==3))] = 0.0  # Must do this for proper convergence
+Q = np.empty((*V.shape, env.action_space.n))  # (action, y, x)
 
 while True:
     obs = env.process_input()
@@ -47,6 +46,6 @@ while True:
         grid, r, done = obs
     elif type(obs) == np.ndarray:  # reset return
         grid = obs
-        V = np.zeros(grid.shape)
+        V = np.random.uniform(-10, 10, (H, W))
         H, W = grid.shape
         V = np.zeros((H, W))

@@ -138,9 +138,11 @@ class Display():
                     continue
                 pos = Vec2D(x, y)
                 if self.grid[y, x] == GOAL:
-                    text = self.font.render('GOAL', True, WHITE)
-                else:
-                    text = self.font.render(str(V[pos.p]), True, WHITE)
+                    self._draw_rect(pos, GREEN)
+                    # text = self.font.render('GOAL', True, WHITE)
+                    continue
+                # else:
+                text = self.font.render(str(V[pos.p]), True, WHITE)
                 self._draw_rect(pos, BLACK)
                 self._draw_text(text, pos)
                 
@@ -184,7 +186,7 @@ class GridWorld():
     def test(self):
         pass
 
-    def __init__(self, map_size=(5, 10, 5, 10), wall_pct=0.7, rewards=(0.0, 1.0),
+    def __init__(self, map_size=(5, 10, 5, 10), wall_pct=0.7, rewards=(0.0, 10.0),
                 render=True, seed=None, non_diag=False, space_fun=None):
         """
         Keyword arguments:
@@ -229,27 +231,30 @@ class GridWorld():
 
         return self.grid
     
-    def reset_to(self, grid, start, goal):
-        """Set environment to ndarray grid, tuple start and goal"""
+    def reset_to(self, grid):
+        """Set environment to ndarray grid"""
         self.done = False
         self.grid = grid
         self.H, self.W = grid.shape
         self.observation_space = spaces.Box(0, NUM_ENTITIES-1, shape=self.grid.shape, dtype=int)
-        self.pos = Vec2D(start)
-        self.goal = Vec2D(goal)
+        self.pos = Vec2D(tuple(*np.argwhere(grid.T==AGENT)))
+        self.goal = Vec2D(tuple(*np.argwhere(grid.T==GOAL)))
             
-        assert(self.grid[self.pos.p] == AGENT), 'Improper starting tile'
-        assert(self.grid[self.goal.p] == GOAL), 'Improper goal tile'
         if self.render:
-            self.display = Display(self.grid, self.pos, goal)
+            self.display = Display(self.grid, self.pos, self.goal)
 
         return self.grid
     
     def step(self, action):
         """Take action and return new state (y, x), reward and done 
-        Mutate pos, done, grid and display consequence."""
+        Mutate pos, done, grid and display results."""
         # Let terminate = done to reset env after failure
-        assert self.action_space.contains(action), f"{action!r} ({type(action)}) invalid"
+        err_msg = f"{action!r} ({type(action)}) invalid"
+        assert self.action_space.contains(action), err_msg
+
+        # Action from terminal state undefined
+        if self.pos == self.goal:
+            return [], 0, True
 
         reward = self.step_penalty
         new_pos = self.pos + self.DIRS[action]
@@ -260,8 +265,8 @@ class GridWorld():
             if self.grid[new_pos.p] == GOAL:
                 self.done = True
                 reward = self.win_reward
-            # if self.render:
-            #     self.display.update(new_pos, self.pos)
+            if self.render:
+                self.display.update(new_pos, self.pos)
 
             # Update grid
             self.grid[self.pos.p] = GOAL if self.pos == self.goal else EMPTY
