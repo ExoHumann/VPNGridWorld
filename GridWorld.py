@@ -98,7 +98,7 @@ class Display():
             self._draw_circle(before, CELL >> 3)
         self._draw_circle(pos, CELL >> 2)  # x >> 2 = x / 4     # Draw agent
 
-    def reset(self, start, goal):
+    def reset(self, start, goal): #TODO set agent to start position on given env.
         self.goal = goal
         self.screen.fill(GREY)
         pg.display.flip()
