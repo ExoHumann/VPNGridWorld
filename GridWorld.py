@@ -184,7 +184,7 @@ class GridWorld():
     process_input() -- Process input using pygame.
 
     Important variables:
-    grid         -- 2d nparray of map with nominal values {0:Visible, 1:Wall, 2:Agent, 3:Goal).
+    grid         -- 3d nparray of hot encoded map with nominal values {0:Wall, 1:Agent, 2:Goal), e.g. grid[WALL][2, 1] = 1 if wall. 
     done         -- bool flag of game termination state.
     action_space -- Discrete of {0:Right, 1:Right-Up, 2:Up, 3:Left-Up, 4:Left, 5:Left-Down, 6:Down, 7:Right-Down}.
     pos          -- Vec2D of current position of agent.
@@ -413,6 +413,22 @@ class GridWorld():
         """Returns if new_pos Vec2D is out of bounds of nparray grid or colliding with wall"""
         return new_pos.x < 0 or new_pos.x >= self.W or new_pos.y < 0 or \
                new_pos.y >= self.H or grid[WALL][new_pos.p]
+
+    def visit(self, action, pos): # ValueIteration helper function
+        """Return tuple new pos and float reward from taking int action at tuple pos (x, y)"""
+        err_msg = f"{action!r} ({type(action)}) invalid"
+        assert self.action_space.contains(action), err_msg
+        pos = Vec2D(pos)
+
+        reward = self.step_penalty
+        new_pos = pos + self.DIRS[action]
+
+        if not self._is_collide(new_pos, self.grid):
+            pos = new_pos
+            if self.grid[GOAL][new_pos.p]:
+                reward = self.win_reward
+
+        return pos.p, reward
 
     def process_input(self):
         """Process user input quit/restart/step/space"""

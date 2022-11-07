@@ -23,10 +23,8 @@ def go():
 
             # Try all actions and update using max expected reward
             for a in range(env.action_space.n):
-                env.set_pos(x, y)               # Reset position
-                s1, r1, _ = env.step(a)         # Take action
-                pos = tuple(*np.argwhere(s1[1]))
-                Q[y, x, a] = r1 + gamma * V[pos] # Belmann's expectation equation
+                s1, r1 = env.visit(a, (x, y))
+                Q[y, x, a] = r1 + gamma * V[s1] # Belmann's expectation equation
             assert(max(Q[y, x, :]) <= 1.0), f'Constrict within [0, 1] for color gradient'
             V_new[y, x] = max(Q[y, x, :])       # Max valued across actions
     V = V_new
