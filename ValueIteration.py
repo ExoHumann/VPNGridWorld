@@ -18,14 +18,16 @@ def go():
     V_new = V.copy()
     for y in range(H):
         for x in range(W):
-            if grid[y, x] in [1,3]:
+            if grid[0, y, x] or grid[2, y, x]:
                 continue  # Skip walls, and goal
 
             # Try all actions and update using max expected reward
             for a in range(env.action_space.n):
                 env.set_pos(x, y)               # Reset position
                 s1, r1, _ = env.step(a)         # Take action
-                Q[y, x, a] = r1 + gamma * V[s1] # Belmann's expectation equation
+                pos = tuple(*np.argwhere(s1[1]))
+                Q[y, x, a] = r1 + gamma * V[pos] # Belmann's expectation equation
+            assert(max(Q[y, x, :]) <= 1.0), f'Constrict within [0, 1] for color gradient'
             V_new[y, x] = max(Q[y, x, :])       # Max valued across actions
     V = V_new
     env.display_values(V)
@@ -33,11 +35,11 @@ def go():
 env = GridWorld(wall_pct=0.5, seed=42, render=True, non_diag=True, space_fun=go)
 # grid = env.reset()
 grid = env.reset_to(TUHE)
-H, W = grid.shape
+_, H, W = grid.shape
 # V = np.random.uniform(-10, 10, (H, W))
-V = np.zeros(grid.shape)
-V = np.ones(grid.shape) * 2
-V[tuple(*np.argwhere(TUHE==3))] = 0.0  # Must do this for proper convergence
+V = np.zeros((H, W))
+# V = np.ones(grid.shape) * 2
+# V[tuple(*np.argwhere(grid[2]))] = 0.0  # Must do this for proper convergence
 Q = np.empty((*V.shape, env.action_space.n))  # (action, y, x)
 
 while True:

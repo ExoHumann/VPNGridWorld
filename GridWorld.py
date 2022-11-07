@@ -19,20 +19,19 @@ from collections import defaultdict
 CELL = 48  # Cell width TODO: Makes dependent on map_size but still global...
 WHITE, GREY, BLACK = (200, 200, 200), (190, 190, 190), (20, 20, 20)
 YELLOW, RED, GREEN = (150, 150, 0), (200, 0, 0), (0, 150, 0)
-COLORS = [BLACK, YELLOW, BLACK, GREEN]  # empty, wall, _, goal
+COLORS = [YELLOW, GREY, GREEN]  # wall, agent, goal
 
 MOVE = [pg.K_d, pg.K_e, pg.K_w, pg.K_q,  # RIGHT, RIGHT_UP, UP, LEFT-UP
         pg.K_a, pg.K_z, pg.K_s, pg.K_c]  # LEFT, LEFT-DOWN, DOWN, RIGHT-DOWN
-NUM_ENTITIES = 4
-VISIBLE, WALL, AGENT, GOAL = range(NUM_ENTITIES)
+NUM_ENTITIES = 3
+WALL, AGENT, GOAL = range(NUM_ENTITIES)
 
 pg.init()
 pg.display.set_caption('GridWorld')
 pg.font.init()
 
-
 class Vec2D():
-    """ Helper class for flipping coordinates and basic arithmetic.
+    """Helper class for flipping coordinates and basic arithmetic.
     pygame draws by v=(x, y) and numpy indexes by p=(y, x)."""
 
     def __init__(self, x, y=0):
@@ -93,23 +92,32 @@ class Display():
     def update(self, pos, before):
         self.grid[AGENT][before.p] = 0
         self.grid[AGENT][pos.p] = 1
-        self._draw_rect(before)  # Draw prior object
+        rect = self._draw_rect(before, BLACK)  # Draw prior object (assume never leaving goal)
+        pg.display.update(rect)
         if self.path and before in self.path:  # Draw path point
-            self._draw_circle(before, CELL >> 3)
-        self._draw_circle(pos, CELL >> 2)  # x >> 2 = x / 4     # Draw agent
+            rect = self._draw_circle(before, CELL >> 3)
+            pg.display.update(rect)
+        rect = self._draw_circle(pos, CELL >> 2)  # x >> 2 = x / 4     # Draw agent
+        pg.display.update(rect)
+    
+
 
     def reset(self, start, goal): #TODO set agent to start position on given env.
         self.goal = goal
         self.screen.fill(GREY)
-        pg.display.flip()
-
+        
         for x in range(self.W):
             for y in range(self.H):
                 pos = Vec2D(x, y)
-                self._draw_rect(pos)
+                color = YELLOW if self.grid[WALL][pos.p] else BLACK
+                self._draw_rect(pos, color)
+        
+        self._draw_rect(goal, GREEN)          
         if self.path:
             self.draw_path()
-        self._draw_circle(start, CELL >> 2)  # Starting pos
+        self._draw_circle(start, CELL >> 2)  
+
+        pg.display.flip()
 
     def draw_policy(self, actions):
         pass
@@ -117,29 +125,29 @@ class Display():
     def draw_path(self):
         for p in self.path:
             self._draw_circle(p, CELL >> 3)  # x >> 3 = x / 8
-
-    def _draw_rect(self, pos):
-        color = -1
+    
+    def _get_color(self, pos):  # Note used currently
         for i in range(NUM_ENTITIES):
             if self.grid[i][pos.p]:
-                color = COLORS[i]
-        if color == -1: color = COLORS[0]
+                return COLORS[i]
+        return BLACK
+
+    def _draw_rect(self, pos, color):
         pos = pos * CELL + Vec2D(1, 1)
         rect = pg.Rect(pos.v, (CELL - 2, CELL - 2))
         pg.draw.rect(self.screen, color, rect, 0)
-        pg.display.update(rect)
+        return rect
 
     def _draw_circle(self, pos, r):
         center = (pos + Vec2D(0.5, 0.5)) * CELL
-        rect = pg.draw.circle(self.screen, GREY, center.v, r)
-        pg.display.update(rect)
+        return pg.draw.circle(self.screen, GREY, center.v, r)
 
     # ---- Value iteration ----
     def update_values(self, V):
         """Remove game elements and impose nparray V over grid"""
-        assert self.grid.shape == V.shape, f"Array dimensions don't match (grid) \
+        assert self.grid[0].shape == V.shape, f"Array dimensions don't match (grid) \
                                             {self.grid.shape} != {V.shape} (V)"
-        V = np.round(V, 2)
+        V = np.round(V, 2)  # Remove decimals up to 2 points
         for x in range(self.W):
             for y in range(self.H):
                 if self.grid[WALL][y, x]:
@@ -147,20 +155,18 @@ class Display():
                 pos = Vec2D(x, y)
                 if self.grid[GOAL][y, x]:
                     self._draw_rect(pos, GREEN)
-                    # text = self.font.render('GOAL', True, WHITE)
                     continue
-                # else:
                 text = self.font.render(str(V[pos.p]), True, WHITE)
-                self._draw_rect(pos, BLACK)
+                color = [x + V[pos.p]**3 * (y - x) for x, y in zip(BLACK, GREEN)]  # Color gradient
+                self._draw_rect(pos, color)
                 self._draw_text(text, pos)
 
-        # pg.display.flip()
+        pg.display.flip()
 
     def _draw_text(self, text, pos):
         center = (pos + Vec2D(0.5, 0.5)) * CELL
         text_rect = text.get_rect(center=center.v)
         self.screen.blit(text, text_rect)
-        pg.display.update(text_rect)
 
 
 class GridWorld():
@@ -188,7 +194,7 @@ class GridWorld():
     def test(self):
         pass
 
-    def __init__(self, map_size=(5, 10, 5, 10), wall_pct=0.7, rewards=(0.0, 10.0),
+    def __init__(self, map_size=(5, 10, 5, 10), wall_pct=0.7, rewards=(0.0, 1.0),
                  render=True, seed=None, non_diag=False, space_fun=None):
         """
         Keyword arguments:
@@ -207,9 +213,9 @@ class GridWorld():
 
         if not non_diag:
             self.DIRS = [Vec2D(1, 0), Vec2D(1, -1),  # RIGHT, RIGHT-UP
-                         Vec2D(0, -1), Vec2D(-1, -1),  # UP, LEFT-UP
-                         Vec2D(-1, 0), Vec2D(-1, 1),  # LEFT, LEFT-DOWN
-                         Vec2D(0, 1), Vec2D(1, 1)]  # DOWN, RIGHT-DOWN
+                         Vec2D(0,-1), Vec2D(-1,-1),  # UP, LEFT-UP
+                         Vec2D(-1,0), Vec2D(-1, 1),  # LEFT, LEFT-DOWN
+                         Vec2D(0, 1), Vec2D(1 , 1)]  # DOWN, RIGHT-DOWN
         else:
             self.DIRS = [Vec2D(1, 0), Vec2D(0, -1),  # RIGHT, UP
                          Vec2D(-1, 0), Vec2D(0, 1)]  # LEFT, DOWN
@@ -219,28 +225,34 @@ class GridWorld():
         self.action_space = spaces.Discrete(len(self.DIRS))
         # observation_space defined in reset()
 
-    def reset(self):
-        """Reset class properties"""
+    def reset(self, new_grid=False):
+        """Reset class properties (or reset current grid)"""
         self.done = False
-        self.grid, start, goal, path = self._generate_grid(self.wall_pct)
-        self.observation_space = spaces.Box(0, NUM_ENTITIES - 1, shape=self.grid.shape, dtype=int)
-        self.pos = start
-        self.goal = goal
 
-        assert (self.grid[AGENT][self.pos.p]), 'Improper starting tile'
-        if self.render:
-            self.display = Display(self.grid, self.pos, goal, path)
+        if not new_grid:
+            self.grid, start, goal, path = self._generate_grid(self.wall_pct)
+            self.observation_space = spaces.Box(0, 1, shape=self.grid.shape, dtype=int)
+            self.start = start
+            self.pos = start
+            self.goal = goal
+            
+            if self.render:
+                self.display = Display(self.grid, self.pos, goal, path)
+        else:
+            if self.render:
+                self.display.update(self.start, self.pos)
+            self.pos = self.start
 
         return self.grid
 
     def reset_to(self, grid):
         """Set environment to ndarray grid"""
         self.done = False
-        self.grid = grid
+        self.grid = self._one_hot_encode(grid)
         self.H, self.W = grid.shape
-        self.observation_space = spaces.Box(0, NUM_ENTITIES - 1, shape=self.grid.shape, dtype=int)
-        self.pos = Vec2D(tuple(*np.argwhere(grid[AGENT].T == 1)))
-        self.goal = Vec2D(tuple(*np.argwhere(grid[GOAL].T == 1)))
+        self.observation_space = spaces.Box(0, 1, shape=self.grid.shape, dtype=int)
+        self.pos = Vec2D(tuple(*np.argwhere(self.grid[AGENT].T)))
+        self.goal = Vec2D(tuple(*np.argwhere(self.grid[GOAL].T)))
 
         if self.render:
             self.display = Display(self.grid, self.pos, self.goal)
@@ -255,8 +267,8 @@ class GridWorld():
         assert self.action_space.contains(action), err_msg
 
         # Action from terminal state undefined
-        if self.pos == self.goal:
-            return [], 0, True
+        # if self.pos == self.goal:
+        #     return [], 0, True
 
         reward = self.step_penalty
         new_pos = self.pos + self.DIRS[action]
@@ -276,7 +288,7 @@ class GridWorld():
 
             self.pos = new_pos
 
-        return self.pos.p, reward, self.done
+        return self.grid, reward, self.done
 
     def sample(self):
         """Return random action in action_space"""
@@ -305,7 +317,7 @@ class GridWorld():
             self.W = random.randint(min_x, max_x)
             self.H = random.randint(min_y, max_y)
 
-            grid = np.zeros((4, self.H, self.W), dtype=int)
+            grid = np.zeros((NUM_ENTITIES, self.H, self.W), dtype=int)
 
             # Sprinkle in walls 
             for x in range(self.W):
@@ -316,8 +328,8 @@ class GridWorld():
             start, goal = self._random_tile(2, grid[WALL])
             grid[AGENT][start.p] = 1
             grid[GOAL][goal.p] = 1
-            if grid[WALL][goal.p] or grid[WALL][start.p]:
-                print("You done fucked")
+
+            assert (not (grid[WALL][goal.p] or grid[WALL][start.p])), 'You done goofed'
 
             # If solvable, return
             if path := self._AStar(grid, start, goal):
@@ -333,10 +345,22 @@ class GridWorld():
         rs = set()
         while len(rs) != n:
             tile = rand()
-            if walls[tile.p]:
-                continue
-            rs.add(tile)
+            if not walls[tile.p]:
+                rs.add(tile)
+            
         return list(rs)
+    
+    def _one_hot_encode(self, grid):
+        """One hot encode grid"""
+        shape = (grid.max(),) + grid.shape
+        hot = np.zeros(shape)
+
+        for i in range(len(grid)):
+            for j in range(len(grid[0])):
+                if grid[i, j]:  # Skip zeroes
+                    hot[grid[i, j]-1, i, j] = 1
+        return hot
+
 
     def _get_neighbors(self, n, grid):
         """ Return neigboring reachable Vec2D list of nodes to node Vec2D n"""
@@ -348,8 +372,8 @@ class GridWorld():
         """AStar to quickly solve grid. 'n' refers to a node in the maze.  
             @returns: Vec2D list of shortest path or None if unsolvable
         """
-        # h = lambda n: max(abs(goal - n))  # Heuristic function "bird flight with diagonal movement
-        h = lambda n: abs(goal - n).sum  # Cartesian movement (proper planning)
+        h = lambda n: max(abs(goal - n))  # Heuristic function "bird flight with diagonal movement
+        # h = lambda n: abs(goal - n).sum  # Cartesian movement (proper planning)
 
         open_set = {start}  # Unvisited nodes
         came_from = {}  # Path tracking
@@ -394,7 +418,7 @@ class GridWorld():
         """Process user input quit/restart/step/space"""
         for event in pg.event.get():
             if event.type == pg.QUIT:
-                self.close()
+                self.close(True)
 
             elif event.type == pg.KEYDOWN:
                 if event.key == pg.K_ESCAPE:
@@ -417,9 +441,9 @@ class GridWorld():
         self.display.update_values(V)
 
     def set_pos(self, x, y):
-        self.grid[AGENT, self.pos.p] = 0
+        self.grid[AGENT][self.pos.p] = 0
         self.pos = Vec2D(x, y)
-        self.grid[AGENT, self.pos.p] = 1
+        self.grid[AGENT][self.pos.p] = 1
 
 
 if __name__ == "__main__":
@@ -429,7 +453,7 @@ if __name__ == "__main__":
         obs = env.process_input()
         if type(obs) == tuple:  # step return
             s, r, done = obs
-            # if done:
-            #     s = env.reset()
+            if done:
+                s = env.reset()
         elif type(obs) == np.ndarray:  # reset return
             grid = obs
