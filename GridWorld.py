@@ -24,7 +24,7 @@ COLORS = [BLACK, YELLOW, BLACK, GREEN]  # empty, wall, _, goal
 MOVE = [pg.K_d, pg.K_e, pg.K_w, pg.K_q,  # RIGHT, RIGHT_UP, UP, LEFT-UP
         pg.K_a, pg.K_z, pg.K_s, pg.K_c]  # LEFT, LEFT-DOWN, DOWN, RIGHT-DOWN
 NUM_ENTITIES = 4
-EMPTY, WALL, AGENT, GOAL = range(NUM_ENTITIES)
+VISIBLE, WALL, AGENT, GOAL = range(NUM_ENTITIES)
 
 pg.init()
 pg.display.set_caption('GridWorld')
@@ -111,6 +111,9 @@ class Display():
             self.draw_path()
         self._draw_circle(start, CELL >> 2)  # Starting pos
 
+    def draw_policy(self, actions):
+        pass
+
     def draw_path(self):
         for p in self.path:
             self._draw_circle(p, CELL >> 3)  # x >> 3 = x / 8
@@ -175,7 +178,7 @@ class GridWorld():
     process_input() -- Process input using pygame.
 
     Important variables:
-    grid         -- 2d nparray of map with nominal values {0:Empty, 1:Wall, 2:Agent, 3:Goal).
+    grid         -- 2d nparray of map with nominal values {0:Visible, 1:Wall, 2:Agent, 3:Goal).
     done         -- bool flag of game termination state.
     action_space -- Discrete of {0:Right, 1:Right-Up, 2:Up, 3:Left-Up, 4:Left, 5:Left-Down, 6:Down, 7:Right-Down}.
     pos          -- Vec2D of current position of agent.
@@ -270,6 +273,7 @@ class GridWorld():
             # Update grid
             self.grid[AGENT][self.pos.p] = 0
             self.grid[AGENT][new_pos.p] = 1
+
             self.pos = new_pos
 
         return self.pos.p, reward, self.done
