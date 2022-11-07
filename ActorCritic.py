@@ -12,22 +12,11 @@ from torch.distributions import Categorical
 
 # Cart Pole
 
-parser = argparse.ArgumentParser(description='PyTorch actor-critic example')
-parser.add_argument('--gamma', type=float, default=0.99, metavar='G',
-                    help='discount factor (default: 0.99)')
-parser.add_argument('--seed', type=int, default=543, metavar='N',
-                    help='random seed (default: 543)')
-parser.add_argument('--render', action='store_true',
-                    help='render the environment')
-parser.add_argument('--log-interval', type=int, default=10, metavar='N',
-                    help='interval between training status logs (default: 10)')
-args = parser.parse_args()
 
 
 env = gym.make('CartPole-v1')
-env.reset(seed=args.seed)
-torch.manual_seed(args.seed)
-
+env.reset()
+torch.manual_seed(12)
 
 SavedAction = namedtuple('SavedAction', ['log_prob', 'value'])
 
@@ -36,6 +25,7 @@ class Policy(nn.Module):
     """
     implements both actor and critic in one model
     """
+
     def __init__(self):
         super(Policy, self).__init__()
         self.affine1 = nn.Linear(4, 128)
@@ -97,9 +87,9 @@ def finish_episode():
     """
     R = 0
     saved_actions = model.saved_actions
-    policy_losses = [] # list to save actor (policy) loss
-    value_losses = [] # list to save critic (value) loss
-    returns = [] # list to save the true values
+    policy_losses = []  # list to save actor (policy) loss
+    value_losses = []  # list to save critic (value) loss
+    returns = []  # list to save the true values
 
     # calculate the true value using rewards returned from the environment
     for r in model.rewards[::-1]:
@@ -171,7 +161,7 @@ def main():
         # log results
         if i_episode % args.log_interval == 0:
             print('Episode {}\tLast reward: {:.2f}\tAverage reward: {:.2f}'.format(
-                  i_episode, ep_reward, running_reward))
+                i_episode, ep_reward, running_reward))
 
         # check if we have "solved" the cart pole problem
         if running_reward > env.spec.reward_threshold:
@@ -181,4 +171,6 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    pass
+    #main()
+
