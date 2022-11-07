@@ -83,16 +83,16 @@ class Display():
 
     def __init__(self, grid, start, goal, path=None):
         self.grid = grid
-        self.H, self.W = grid.shape
+        self.H, self.W = grid[WALL].shape
         self.path = path
         self.screen = pg.display.set_mode([self.W * CELL, self.H * CELL])
         self.font = pg.font.Font(None, 25)
         self.reset(start, goal)
 
     def update(self, pos, before):
-        self.grid[before.p] = EMPTY if before != self.goal else GOAL
-        self.grid[pos.p] = AGENT
-        self._draw_rect(before, COLORS[self.grid[before.p]])    # Draw prior object
+        self.grid[EMPTY][before.p] = 1 if before != self.goal else 0
+        self.grid[AGENT][pos.p] = 1
+        self._draw_rect(before)    # Draw prior object
         if self.path and before in self.path:                   # Draw path point
             self._draw_circle(before, CELL >> 3)
         self._draw_circle(pos, CELL >> 2)  # x >> 2 = x / 4     # Draw agent
@@ -105,8 +105,7 @@ class Display():
         for x in range(self.W):
             for y in range(self.H):
                 pos = Vec2D(x, y)
-                color = COLORS[self.grid[pos.p]]
-                self._draw_rect(pos, color)
+                self._draw_rect(pos)
         if self.path:
             self.draw_path()
         self._draw_circle(start, CELL >> 2)  # Starting pos
@@ -115,7 +114,10 @@ class Display():
         for p in self.path:
             self._draw_circle(p, CELL >> 3)  # x >> 3 = x / 8
 
-    def _draw_rect(self, pos, color):
+    def _draw_rect(self, pos):
+        for i in range(NUM_ENTITIES):
+            if self.grid[i][pos.p] == 1:
+                color = COLORS[i]
         pos = pos * CELL + Vec2D(1, 1)
         rect = pg.Rect(pos.v, (CELL-2, CELL-2))
         pg.draw.rect(self.screen, color, rect, 0)
@@ -134,10 +136,10 @@ class Display():
         V = np.round(V, 2)
         for x in range(self.W):
             for y in range(self.H):
-                if self.grid[y, x] == WALL:
+                if self.grid[WALL][y, x] == WALL:
                     continue
                 pos = Vec2D(x, y)
-                if self.grid[y, x] == GOAL:
+                if self.grid[GOAL][y, x] == 1:
                     self._draw_rect(pos, GREEN)
                     # text = self.font.render('GOAL', True, WHITE)
                     continue
@@ -225,7 +227,7 @@ class GridWorld():
         self.pos = start
         self.goal = goal
             
-        assert(self.grid[self.pos.p] == AGENT), 'Improper starting tile'
+        assert(self.grid[AGENT][self.pos.p] == 1), 'Improper starting tile'
         if self.render:
             self.display = Display(self.grid, self.pos, goal, path)
 
@@ -237,8 +239,8 @@ class GridWorld():
         self.grid = grid
         self.H, self.W = grid.shape
         self.observation_space = spaces.Box(0, NUM_ENTITIES-1, shape=self.grid.shape, dtype=int)
-        self.pos = Vec2D(tuple(*np.argwhere(grid.T==AGENT)))
-        self.goal = Vec2D(tuple(*np.argwhere(grid.T==GOAL)))
+        self.pos = Vec2D(tuple(*np.argwhere(grid[AGENT].T==1)))
+        self.goal = Vec2D(tuple(*np.argwhere(grid[GOAL].T==1)))
             
         if self.render:
             self.display = Display(self.grid, self.pos, self.goal)
@@ -262,15 +264,15 @@ class GridWorld():
         terminate = self._is_collide(new_pos, self.grid)
         # done = terminate
         if not terminate:
-            if self.grid[new_pos.p] == GOAL:
+            if self.grid[GOAL][new_pos.p] == 1:
                 self.done = True
                 reward = self.win_reward
             if self.render:
                 self.display.update(new_pos, self.pos)
 
             # Update grid
-            self.grid[self.pos.p] = GOAL if self.pos == self.goal else EMPTY
-            self.grid[new_pos.p] = AGENT
+            self.grid[GOAL][self.pos.p] = 1 if self.pos == self.goal else 0
+            self.grid[AGENT][new_pos.p] = 1
             self.pos = new_pos
             
 
@@ -302,21 +304,26 @@ class GridWorld():
             min_x, max_x, min_y, max_y = self.map_size
             self.W = random.randint(min_x, max_x)
             self.H = random.randint(min_y, max_y)
-            grid = np.empty((self.H, self.W), dtype=int)
+
+            grid = np.zeros((4, self.H, self.W), dtype=int)
 
             # Sprinkle in walls 
             for x in range(self.W):
                 for y in range(self.H):
-                    grid[y, x] = int(random.random() < self.wall_pct)
+                    grid[WALL, y, x] = int(random.random() < self.wall_pct)
             
             # Insert start and goal TODO what does paper do?
             start, goal = self._random_tile(2)
-            grid[start.p] = AGENT
-            grid[goal.p] = GOAL
+            grid[AGENT][start.p] = 1
+            grid[GOAL][goal.p] = 1
+            for x in range(self.W):
+                for y in range (self.H):
+                    grid[EMPTY, y, x] = not (grid[WALL, y, x] or grid[AGENT, y, x] or grid[GOAL, y, x])
+
 
             # If solvable, return
             if path := self._AStar(grid, start, goal):
-                return grid, start, goal, path
+                    return grid, start, goal, path
         
         raise RuntimeError("Failed to create map after 100 tries! Your map"
 	               "size is probably too small")
@@ -379,7 +386,7 @@ class GridWorld():
     def _is_collide(self, new_pos, grid):
         """Returns if new_pos Vec2D is out of bounds of nparray grid or colliding with wall"""
         return new_pos.x < 0 or new_pos.x >= self.W or new_pos.y < 0 or \
-               new_pos.y >= self.H or grid[new_pos.p] == WALL
+               new_pos.y >= self.H or grid[WALL][new_pos.p] == 1
     
     def process_input(self):
         """Process user input quit/restart/step/space"""
@@ -408,9 +415,9 @@ class GridWorld():
         self.display.update_values(V)
     
     def set_pos(self, x, y):
-        self.grid[self.pos.p] = GOAL if self.pos == self.goal else EMPTY
+        self.grid[AGENT,self.pos.p] = 1 if self.pos == self.goal else 0
         self.pos = Vec2D(x, y)
-        self.grid[self.pos.p] = AGENT
+        self.grid[AGENT, self.pos.p] = 1
         
 
 
@@ -418,7 +425,7 @@ class GridWorld():
                     
 
 if __name__ == "__main__":
-    env = GridWorld(seed=9, wall_pct=0.5, render=True, space_fun=GridWorld.test)
+    env = GridWorld(seed=9, wall_pct=0.5, map_size=(5, 10, 5, 10),  render=True, space_fun=GridWorld.test)
     env.reset()
     while True:
         obs = env.process_input()
