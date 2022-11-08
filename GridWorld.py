@@ -327,6 +327,8 @@ class GridWorld():
             start, goal = self._random_tile(2)
             grid[AGENT][start.p] = 1
             grid[GOAL][goal.p] = 1
+            grid[GOAL][goal.p] = 1
+            grid[WALL][goal.p] = 0
 
             # assert (not (grid[WALL][goal.p] or grid[WALL][start.p])), 'You done goofed'
 
