@@ -3,10 +3,10 @@
 
     Common bugs
     - "list index out of range" => random.randint(a, b) is inclusive so replace b with b-1. 
-    - Improper grid udating when moving agent about
+    - Forgetting to remove prior element in grid
 
     TODO
-    - ???
+    - Curriculum friendly structure for training
 """
 
 from logging import exception
@@ -227,6 +227,10 @@ class GridWorld():
 
     def reset(self, new_grid=True):
         """Reset class properties (or reset current grid)"""
+        # TODO 
+        # - random start same grid
+        # - random start and goal, same grid
+        # - 
         self.done = False
 
         if new_grid:
@@ -239,10 +243,14 @@ class GridWorld():
             if self.render:
                 self.display = Display(self.grid, self.pos, goal, path)
         else:
-            if self.render:
-                self.display = Display(self.grid, self.start, self.pos)
                 # self.display.update(self.start, self.pos)
-            self.pos = self.start
+            # self.pos = self.start
+            before = self.pos
+            self.grid[AGENT][self.pos.p] = 0
+            self.pos = self._random_tile(walls=self.grid[WALL]+self.grid[GOAL])[0]
+            self.grid[AGENT][self.pos.p] = 1
+            if self.render:
+                self.display = Display(self.grid, self.pos, before)
 
         return self.grid
 
@@ -321,9 +329,11 @@ class GridWorld():
             grid = np.zeros((NUM_ENTITIES, self.H, self.W), dtype=int)
 
             # Sprinkle in walls 
-            for x in range(self.W):
-                for y in range(self.H):
-                    grid[WALL, y, x] = int(random.random() < self.wall_pct)
+            if wall_pct:
+                for x in range(self.W):
+                    for y in range(self.H):
+                        grid[WALL, y, x] = int(random.random() < self.wall_pct)
+
             # Insert start and goal TODO what does paper do?
             start, goal = self._random_tile(2)
             grid[AGENT][start.p] = 1
@@ -340,13 +350,19 @@ class GridWorld():
         raise RuntimeError("Failed to create map after 100 tries! Your map"
                            "size is probably too small")
 
-    def _random_tile(self, n=1):
+    def _random_tile(self, n=1, walls=[]) -> list[Vec2D]:
         """Return random unique Vec2D tile"""
         rand = lambda: Vec2D(random.randint(0, self.W - 1),
                              random.randint(0, self.H - 1))  # random.randint is inclusive!!!
         rs = set()
-        while len(rs) != n:
-            rs.add(rand())
+        if len(walls) > 0:
+            while len(rs) != n:
+                r = rand()
+                if not walls[r.p]:
+                    rs.add(r)
+        else:
+            while len(rs) != n:
+                rs.add(rand())
             
         return list(rs)
     
@@ -463,13 +479,13 @@ class GridWorld():
 
 
 if __name__ == "__main__":
-    env = GridWorld(seed=9, wall_pct=0.5, map_size=(5, 10, 5, 10), render=True, space_fun=GridWorld.test)
+    env = GridWorld(seed=9, wall_pct=0.0, map_size=(5, 10, 5, 10), render=True, space_fun=GridWorld.test)
     env.reset()
     while True:
         obs = env.process_input()
         if type(obs) == tuple:  # step return
             s, r, done = obs
             if done:
-                s = env.reset()
+                s = env.reset(False)
         elif type(obs) == np.ndarray:  # reset return
             grid = obs

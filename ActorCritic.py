@@ -16,14 +16,21 @@ import time
 
 # Cart Pole
 
-wall_pct=0.0
+STALE = 40  # Number of steps before giving up
+N_EPISODES = 1000  # Total number of training episodes 
+
 gamma = 0.99
 seed = 0#543
 fps = 0
 render = False
 if fps:
     render = True
-log_interval = 10
+log_interval = 40
+
+wall_pct = 0.2
+map_size = 5
+map_size = [map_size]*4
+non_diag = True
 
 # parser = argparse.ArgumentParser(description='PyTorch actor-critic example')
 # parser.add_argument('--gamma', type=float, default=0.99, metavar='G',
@@ -39,10 +46,10 @@ log_interval = 10
 
 # env = gym.make('CartPole-v1', render_mode="rgb_array")
 if seed:
-    env = GridWorld(map_size=(4,4,5,5), seed=seed, render=render, rewards=(0.0, 1.0), wall_pct=wall_pct)    
+    env = GridWorld(map_size=map_size, seed=seed, render=render, non_diag=non_diag, rewards=(0.0, 1.0), wall_pct=wall_pct)    
     torch.manual_seed(seed)
 else:
-    env = GridWorld(map_size=(4,4,5,5), render=render, rewards=(0.0, 1.0), wall_pct=wall_pct)
+    env = GridWorld(map_size=map_size, render=render, non_diag=non_diag, rewards=(0.0, 1.0), wall_pct=wall_pct)
 env.reset()
 
 
@@ -176,7 +183,7 @@ def main():
 
         # for each episode, only run 9999 steps so that we don't
         # infinite loop while learning
-        for t in range(1, 40):
+        for t in range(1, STALE):
 
             # select action from policy
             # print(f"{i_episode}, {t} - selecting action")
@@ -207,17 +214,19 @@ def main():
             print('Episode {}\tLast reward: {:.2f}\tAverage reward: {:.2f}'.format(
                   i_episode, ep_reward, running_reward))
 
-        # check if we have "solved" the cart pole problem
-        if i_episode > 300:
-        # if running_reward > env.spec.reward_threshold:
-            print("Solved! Running reward is now {} and "
-                  "the last episode runs to {} time steps!".format(running_reward, t))
-            break
+            # check if we have "solved" the cart pole problem
+            if abs(running_reward - 1.00) < eps and is_solved(100):
+            # if running_reward > env.spec.reward_threshold:
+                print("Solved! Running reward is now {} and "
+                    "the last episode runs to {} time steps!".format(running_reward, t))
+                break
     
 def play():
     # env = GridWorld(map_size=(4,4,5,5), render=True, rewards=(0.0, 100.0))
     env.render = True
     state = env.reset(new_grid=False)
+    wins = 0
+    total = 0
 
     # for i in range(100):
     i = 0
@@ -234,8 +243,46 @@ def play():
 
         i += 1
         if done or i > 50:  # Complete or give up
-            i = 0
             state = env.reset(new_grid=False)
+            if i <= 50: 
+                wins += 1
+            total += 1
+            i = 0
+            print(f'{wins} / {total}')
+            if total == 100:
+                break
+
+def is_solved(eps=100):
+    """Convergence test over arg 'eps' episodes"""
+    model.eval()
+    state = env.reset(new_grid=False)
+    wins = 0
+    total = 0
+
+    i = 0
+    while True:
+        # pick best action
+        state = state.flatten()
+        state = torch.from_numpy(state).float()
+        probs, _ = model(state)
+        action = probs.argmax().item()
+
+        # take action
+        state, reward, done = env.step(action)
+
+        i += 1
+        if done:  # Complete
+            state = env.reset(new_grid=False)            
+            wins += 1
+            i = 0
+            if wins == eps:
+                model.train()
+                return True
+        elif i > 50:
+            model.train()
+            print(f'Failed evaluation: {wins}/{eps}')
+            return False
+
 
 
 
