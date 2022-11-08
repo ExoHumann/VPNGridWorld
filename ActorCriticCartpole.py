@@ -1,6 +1,7 @@
 # import argparse
 import gym
 import numpy as np
+import sys
 from itertools import count
 from collections import namedtuple
 
@@ -10,19 +11,11 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.distributions import Categorical
 
-from GridWorld import GridWorld
-from math import prod
-import time
-
 # Cart Pole
 
-wall_pct=0.0
 gamma = 0.99
-seed = 0#543
-fps = 0
-render = False
-if fps:
-    render = True
+seed = 543
+render = True
 log_interval = 10
 
 # parser = argparse.ArgumentParser(description='PyTorch actor-critic example')
@@ -37,13 +30,9 @@ log_interval = 10
 # args = parser.parse_args()
 
 
-# env = gym.make('CartPole-v1', render_mode="rgb_array")
-if seed:
-    env = GridWorld(map_size=(4,4,5,5), seed=seed, render=render, rewards=(0.0, 1.0), wall_pct=wall_pct)    
-    torch.manual_seed(seed)
-else:
-    env = GridWorld(map_size=(4,4,5,5), render=render, rewards=(0.0, 1.0), wall_pct=wall_pct)
-env.reset()
+env = gym.make('CartPole-v1', render_mode="rgb_array")
+env.reset(seed=seed)
+torch.manual_seed(seed)
 
 
 SavedAction = namedtuple('SavedAction', ['log_prob', 'value'])
@@ -55,14 +44,13 @@ class Policy(nn.Module):
     """
     def __init__(self):
         super(Policy, self).__init__()
-        hidden_units = 32
-        self.affine1 = nn.Linear(prod(env.observation_space.shape), hidden_units)
+        self.affine1 = nn.Linear(4, 128)
 
         # actor's layer
-        self.action_head = nn.Linear(hidden_units, env.action_space.n)
+        self.action_head = nn.Linear(128, 2)
 
         # critic's layer
-        self.value_head = nn.Linear(hidden_units, 1)
+        self.value_head = nn.Linear(128, 1)
 
         # action & reward buffer
         self.saved_actions = []
@@ -76,8 +64,7 @@ class Policy(nn.Module):
 
         # actor: choses action to take from state s_t
         # by returning probability of each action
-        action_logits = self.action_head(x)
-        action_prob = F.softmax(action_logits, dim=-1)
+        action_prob = F.softmax(self.action_head(x), dim=-1)
 
         # critic: evaluates being in the state s_t
         state_values = self.value_head(x)
@@ -94,7 +81,6 @@ eps = np.finfo(np.float32).eps.item()
 
 
 def select_action(state):
-    state = state.flatten()
     state = torch.from_numpy(state).float()
     probs, state_value = model(state)
 
@@ -128,7 +114,7 @@ def finish_episode():
         returns.insert(0, R)
 
     returns = torch.tensor(returns)
-    # returns = (returns - returns.mean()) / (returns.std() + eps)
+    returns = (returns - returns.mean()) / (returns.std() + eps)
 
     for (log_prob, value), R in zip(saved_actions, returns):
         advantage = R - value.item()
@@ -149,46 +135,33 @@ def finish_episode():
     loss.backward()
     optimizer.step()
 
-    # show updated action weights
-    # print(model.get_parameter("action_head.weight"))
-    # grads = []
-    # for name, param in model.named_parameters():
-    #     print(name, param)
-        # grads.append(param.view(-1))
-    # grads = torch.cat(grads)
-    # print()
-
-
     # reset rewards and action buffer
     del model.rewards[:]
     del model.saved_actions[:]
 
 
 def main():
-    running_reward = 0
+    running_reward = 10
 
     # run infinitely many episodes
     for i_episode in count(1):
 
         # reset environment and episode reward
-        state = env.reset(new_grid=False)
+        state, _ = env.reset()
         ep_reward = 0
 
         # for each episode, only run 9999 steps so that we don't
         # infinite loop while learning
-        for t in range(1, 40):
+        for t in range(1, 10000):
 
             # select action from policy
-            # print(f"{i_episode}, {t} - selecting action")
             action = select_action(state)
 
             # take the action
-            if render:
-                time.sleep(fps)
-            state, reward, done = env.step(action)
+            state, reward, done, _, _ = env.step(action)
 
-            # if render:
-            #     env.render()
+            if render:
+                env.render()
 
             model.rewards.append(reward)
             ep_reward += reward
@@ -199,7 +172,6 @@ def main():
         running_reward = 0.05 * ep_reward + (1 - 0.05) * running_reward
 
         # perform backprop
-        # print(f"{i_episode} - finishing episode")
         finish_episode()
 
         # log results
@@ -208,37 +180,11 @@ def main():
                   i_episode, ep_reward, running_reward))
 
         # check if we have "solved" the cart pole problem
-        if i_episode > 300:
-        # if running_reward > env.spec.reward_threshold:
+        if running_reward > env.spec.reward_threshold:
             print("Solved! Running reward is now {} and "
                   "the last episode runs to {} time steps!".format(running_reward, t))
             break
-    
-def play():
-    # env = GridWorld(map_size=(4,4,5,5), render=True, rewards=(0.0, 100.0))
-    env.render = True
-    state = env.reset(new_grid=False)
-
-    # for i in range(100):
-    i = 0
-    while True:
-        # pick best action
-        state = state.flatten()
-        state = torch.from_numpy(state).float()
-        probs, _ = model(state)
-        action = probs.argmax().item()
-
-        # take action
-        time.sleep(0.1)
-        state, reward, done = env.step(action)
-
-        i += 1
-        if done or i > 50:  # Complete or give up
-            i = 0
-            state = env.reset(new_grid=False)
-
 
 
 if __name__ == '__main__':
     main()
-    play()

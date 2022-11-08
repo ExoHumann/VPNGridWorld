@@ -23,7 +23,7 @@ def go():
 
             # Try all actions and update using max expected reward
             for a in range(env.action_space.n):
-                s1, r1 = env.visit(a, (x, y))
+                s1, r1 = env.visit(a, (x, y))   # Hacking the system
                 Q[y, x, a] = r1 + gamma * V[s1] # Belmann's expectation equation
             assert(max(Q[y, x, :]) <= 1.0), f'Constrict within [0, 1] for color gradient'
             V_new[y, x] = max(Q[y, x, :])       # Max valued across actions
