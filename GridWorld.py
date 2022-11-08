@@ -260,7 +260,7 @@ class GridWorld():
         return self.grid
 
     def step(self, action):
-        """Take action and return new state (y, x), reward and done 
+        """Take action and return new state grid, reward and done 
         Mutate pos, done, grid and display results."""
         # Let terminate = done to reset env after failure
         err_msg = f"{action!r} ({type(action)}) invalid"
@@ -323,13 +323,12 @@ class GridWorld():
             for x in range(self.W):
                 for y in range(self.H):
                     grid[WALL, y, x] = int(random.random() < self.wall_pct)
-
             # Insert start and goal TODO what does paper do?
-            start, goal = self._random_tile(2, grid[WALL])
+            start, goal = self._random_tile(2)
             grid[AGENT][start.p] = 1
             grid[GOAL][goal.p] = 1
 
-            assert (not (grid[WALL][goal.p] or grid[WALL][start.p])), 'You done goofed'
+            # assert (not (grid[WALL][goal.p] or grid[WALL][start.p])), 'You done goofed'
 
             # If solvable, return
             if path := self._AStar(grid, start, goal):
@@ -338,15 +337,13 @@ class GridWorld():
         raise RuntimeError("Failed to create map after 100 tries! Your map"
                            "size is probably too small")
 
-    def _random_tile(self, n=1, walls=[]):
+    def _random_tile(self, n=1):
         """Return random unique Vec2D tile"""
         rand = lambda: Vec2D(random.randint(0, self.W - 1),
                              random.randint(0, self.H - 1))  # random.randint is inclusive!!!
         rs = set()
         while len(rs) != n:
-            tile = rand()
-            if not walls[tile.p]:
-                rs.add(tile)
+            rs.add(rand())
             
         return list(rs)
     
