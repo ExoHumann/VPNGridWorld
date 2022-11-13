@@ -20,6 +20,7 @@ STALE = 40  # Number of steps before giving up
 N_EPISODES = 1000  # Total number of training episodes 
 
 gamma = 0.99
+lr = 3e-2
 seed = 0#543
 fps = 0
 render = False
@@ -27,22 +28,10 @@ if fps:
     render = True
 log_interval = 40
 
-wall_pct = 0.0
+wall_pct = 0.2
 map_size = 5
 map_size = [map_size]*4
 non_diag = True
-
-# parser = argparse.ArgumentParser(description='PyTorch actor-critic example')
-# parser.add_argument('--gamma', type=float, default=0.99, metavar='G',
-#                     help='discount factor (default: 0.99)')
-# parser.add_argument('--seed', type=int, default=543, metavar='N',
-#                     help='random seed (default: 543)')
-# parser.add_argument('--render', action='store_true',
-#                     help='render the environment')
-# parser.add_argument('--log-interval', type=int, default=10, metavar='N',
-#                     help='interval between training status logs (default: 10)')
-# args = parser.parse_args()
-
 
 # env = gym.make('CartPole-v1', render_mode="rgb_array")
 if seed:
@@ -76,9 +65,7 @@ class Policy(nn.Module):
         self.rewards = []
 
     def forward(self, x):
-        """
-        forward of both actor and critic
-        """
+        """forward of both actor and critic"""
         x = F.relu(self.affine1(x))
 
         # actor: choses action to take from state s_t
@@ -96,7 +83,7 @@ class Policy(nn.Module):
 
 
 model = Policy()
-optimizer = optim.Adam(model.parameters(), lr=3e-2)
+optimizer = optim.Adam(model.parameters(), lr=lr)
 eps = np.finfo(np.float32).eps.item()
 
 
@@ -114,14 +101,12 @@ def select_action(state):
     # save to action buffer
     model.saved_actions.append(SavedAction(m.log_prob(action), state_value))
 
-    # the action to take (left or right)
+    # the action to take 
     return action.item()
 
 
 def finish_episode():
-    """
-    Training code. Calculates actor and critic loss and performs backprop.
-    """
+    """Training code. Calculates actor and critic loss and performs backprop."""
     R = 0
     saved_actions = model.saved_actions
     policy_losses = [] # list to save actor (policy) loss
@@ -181,12 +166,11 @@ def main():
         state = env.reset(new_grid=False)
         ep_reward = 0
 
-        # for each episode, only run 9999 steps so that we don't
+        # for each episode, only run STALE steps so that we don't
         # infinite loop while learning
         for t in range(1, STALE):
 
             # select action from policy
-            # print(f"{i_episode}, {t} - selecting action")
             action = select_action(state)
 
             # take the action
@@ -228,7 +212,6 @@ def play():
     wins = 0
     total = 0
 
-    # for i in range(100):
     i = 0
     while True:
         # pick best action
