@@ -67,8 +67,7 @@ class Policy(nn.Module):
         # 1. a list with the probability of each action over the action space
         # 2. the value from state s_t
         return action_prob, state_values
-
-
+    
 model = Policy()
 optimizer = optim.Adam(model.parameters(), lr=3e-2)
 eps = np.finfo(np.float32).eps.item()
@@ -92,9 +91,7 @@ def select_action(state):
 
 
 def finish_episode():
-    """
-    Training code. Calculates actor and critic loss and performs backprop.
-    """
+    """Training code. Calculates actor and critic loss and performs backprop."""
     R = 0
     saved_actions = model.saved_actions
     policy_losses = [] # list to save actor (policy) loss
