@@ -27,7 +27,7 @@ if fps:
     render = True
 log_interval = 40
 
-wall_pct = 0.2
+wall_pct = 0.0
 map_size = 5
 map_size = [map_size]*4
 non_diag = True

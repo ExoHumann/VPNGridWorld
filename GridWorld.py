@@ -329,6 +329,7 @@ class GridWorld():
             grid = np.zeros((NUM_ENTITIES, self.H, self.W), dtype=int)
 
             # Sprinkle in walls 
+            # np.random.binomial(1, wall_pct, size=(self.H, self.W))
             if wall_pct:
                 for x in range(self.W):
                     for y in range(self.H):
@@ -350,7 +351,7 @@ class GridWorld():
         raise RuntimeError("Failed to create map after 100 tries! Your map"
                            "size is probably too small")
 
-    def _random_tile(self, n=1, walls=[]) -> list[Vec2D]:
+    def _random_tile(self, n=1, walls=[]):
         """Return random unique Vec2D tile"""
         rand = lambda: Vec2D(random.randint(0, self.W - 1),
                              random.randint(0, self.H - 1))  # random.randint is inclusive!!!
