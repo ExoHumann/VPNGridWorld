@@ -30,7 +30,7 @@ Map = np.array([[1, 0, 0, 0, 0, 2, 0, 1, 0, 1],
                  [1, 0, 1, 0, 1, 3, 1, 1, 0, 1]])
 
 n_steps_givup = 40  # Number of steps before giving up  #max steps allowed in train2
-N_EPISODES = 20000  # Total number of training episodes
+N_EPISODES = 2000  # Total number of training episodes
 K = 10
 test_size = 100 #number of test attempts
 learning_rate = 3e-2
@@ -112,9 +112,9 @@ class Embedding(nn.Module):
         #value iteration
         for k in range(K):
             for i, j in allowed_action_dict.items():
-                self.v_next = torch.max(self.v_current,torch.max([]))
+                self.v_next = torch.max(self.v_current,torch.max([self.v_current ]))
 
-        return r_in, r_out, p
+        return r_in, r_out, #p
 
 class Policy(nn.Module):
     """
@@ -303,7 +303,7 @@ def play():
     # env = GridWorld(map_size=(4,4,5,5), render=True, rewards=(0.0, 100.0))
     model.eval()
     env.render = True
-    state = env.reset(new_grid=False)
+    state = env.reset(new_grid=False, new_start=False, new_goal=False)
 
     wins_baseline = 0
     total_baseline = 0
@@ -332,7 +332,7 @@ def play():
 
     i = 0
     env.render = renderTest
-    state = env.reset(new_grid=False)
+    state = env.reset(new_grid=False, new_start=False, new_goal=False)
     wins = 0
     total = 0
     while True:

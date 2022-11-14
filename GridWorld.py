@@ -226,7 +226,7 @@ class GridWorld():
 
         # observation_space defined in reset()
 
-    def reset(self, new_grid=True):
+    def reset(self, new_grid=True, new_start = False, new_goal = False):
         """Reset class properties (or reset current grid)"""
         # TODO 
         # - random start same grid BEWARE: agent may spawn isolated from goal. Solve with Astar
@@ -248,10 +248,16 @@ class GridWorld():
             # self.pos = self.start
             before = self.pos
             self.grid[AGENT][self.pos.p] = 0
-            self.pos = self._random_tile(walls=self.grid[WALL]+self.grid[GOAL])[0]  # CHECK WITH ASTAR hERE
+            if new_start:
+                self.pos = self._random_tile(walls=self.grid[WALL]+self.grid[GOAL])[0]  # CHECK WITH ASTAR hERE
+            else:
+                self.pos = self.start
             self.grid[AGENT][self.pos.p] = 1
             if self.render:
-                self.display = Display(self.grid, self.pos, before)
+                if new_goal:
+                    self.display = Display(self.grid, self.pos, before)
+                else:
+                    self.display = Display(self.grid, self.pos, self.goal)
 
         return self.grid
 
