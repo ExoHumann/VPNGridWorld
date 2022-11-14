@@ -29,12 +29,17 @@ Map = np.array([[1, 0, 0, 0, 0, 2, 0, 1, 0, 1],
                  [0, 1, 1, 0, 0, 0, 0, 0, 1, 1],
                  [1, 0, 1, 0, 1, 3, 1, 1, 0, 1]])
 
-n_steps_givup = 40  # Number of steps before giving up
-N_EPISODES = 2000  # Total number of training episodes
+n_steps_givup = 40  # Number of steps before giving up  #max steps allowed in train2
+N_EPISODES = 20000  # Total number of training episodes
 K = 10
+test_size = 100 #number of test attempts
 learning_rate = 3e-2
 gamma = 0.99
 seed = 0  # 543
+max_allowed_steps = n_steps_givup #max steps allowed in test
+allowed_action_dict = {-1: -1, 0: -1, 1: -1, -1: 0, 0: 0, 1: 0, -1: 1, 0: 1,
+                       1: 1}  # i left, j right #staying at the same place is allowed
+
 fps = 0
 render = False
 renderTest = True
@@ -80,7 +85,7 @@ class Embedding(nn.Module):
         self.r_in = nn.Linear(hidden_units2, output_dims)
 
         # transition probability head
-        self.p = nn.Linear(hidden_units2, output_dims)
+        #self.p = nn.Linear(hidden_units2, output_dims)
 
 
         # action & reward buffer
@@ -102,13 +107,12 @@ class Embedding(nn.Module):
 
         r_in = self.r_out(x)
 
-        p = self.p(x)
+        #p = self.p(x)
 
         #value iteration
-
         for k in range(K):
-
-           torch.max(v,torch.max([]))
+            for i, j in allowed_action_dict.items():
+                self.v_next = torch.max(self.v_current,torch.max([]))
 
         return r_in, r_out, p
 
@@ -313,14 +317,16 @@ def play():
         state, reward, done = env.step(baseline_action)
 
         i += 1
-        if done or i > 50:  # Complete or give up, max 50 steps
+        if done or i > max_allowed_steps:  # Complete or give up, max 50 steps
             state = env.reset(new_grid=False)
             env.render = False
-            if i <= 50:
+            if i <= max_allowed_steps:
                 wins_baseline += 1
             total_baseline += 1
-        if i == 100:
-            break
+
+            if total_baseline == test_size:
+                break
+
     print(f'wins baseline: {wins_baseline} attempts baseline: {total_baseline}')
 
 
@@ -344,14 +350,14 @@ def play():
         state, reward, done = env.step(action)
 
         i += 1
-        if done or i > 50:  # Complete or give up, max 50 steps
+        if done or i > max_allowed_steps:  # Complete or give up, max 50 steps
             state = env.reset(new_grid=False)
-            if i <= 50:
+            if i <= max_allowed_steps:
                 wins += 1
             total += 1
             i = 0
             print(f'wins: {wins} attempts: {total}')
-        if total == 100:
+        if total == test_size:
             break
 
 
@@ -386,7 +392,7 @@ def is_solved(eps=100):
             if wins == eps:
                 model.train()
                 return True
-        elif i > 50:
+        elif i > max_allowed_steps:
             model.train()
             print(f'Failed evaluation: {wins}/{eps}')
             return False
