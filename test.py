@@ -7,6 +7,11 @@ import numpy as np
 # env.reset()
 # print(env.observation_space.shape)
 
-A = np.random.binomial(1, wall_pct, size=(2, 2))
+from itertools import count
 
-print(A)
+
+def helper(keys=100):
+    print(keys)
+
+helper(keys=1009)
+

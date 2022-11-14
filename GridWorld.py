@@ -223,6 +223,7 @@ class GridWorld():
         self.step_penalty, self.win_reward = rewards
 
         self.action_space = spaces.Discrete(len(self.DIRS))
+
         # observation_space defined in reset()
 
     def reset(self, new_grid=True):
