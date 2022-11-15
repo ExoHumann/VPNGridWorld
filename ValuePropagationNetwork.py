@@ -30,15 +30,13 @@ Map = np.array([[1, 0, 0, 0, 0, 2, 0, 1, 0, 1],
                  [1, 0, 1, 0, 1, 3, 1, 1, 0, 1]])
 
 n_steps_givup = 40  # Number of steps before giving up  #max steps allowed in train2
-N_EPISODES = 2000  # Total number of training episodes
+N_EPISODES = 8000  # Total number of training episodes
 K = 10
 test_size = 100 #number of test attempts
 learning_rate = 3e-2
 gamma = 0.99
 seed = 0  # 543
 max_allowed_steps = n_steps_givup #max steps allowed in test
-allowed_action_dict = {-1: -1, 0: -1, 1: -1, -1: 0, 0: 0, 1: 0, -1: 1, 0: 1,
-                       1: 1}  # i left, j right #staying at the same place is allowed
 
 fps = 0
 render = False
@@ -91,8 +89,9 @@ class Embedding(nn.Module):
         # action & reward buffer
         self.saved_actions = []
         self.rewards = []
-        self.v_current = torch.zeros(size=output_dims)
-        self.v_next = torch.zeros(size=output_dims)
+        shape_of_board = (env.observation_space.shape[1], env.observation_space.shape[2])
+        self.v_current = torch.zeros(shape_of_board)
+        self.v_next = torch.zeros(shape_of_board)
 
         #self.values = np.zeros(())
     def forward(self, x):
@@ -111,10 +110,16 @@ class Embedding(nn.Module):
 
         #value iteration
         for k in range(K):
-            for i, j in allowed_action_dict.items():
-                self.v_next = torch.max(self.v_current,torch.max([self.v_current ]))
+            for i, j in states:
+                for i_dot, j_dot in self.DIRS:
+
+                    self.v_next[i, j] = torch.max(self.v_current[i, j],torch.max([self.v_current[i, j] + r_in - r_out]))
+            self.v_current = self.v_next
 
         return r_in, r_out, #p
+
+
+
 
 class Policy(nn.Module):
     """
@@ -127,7 +132,6 @@ class Policy(nn.Module):
         hidden_units2 = 64
         self.affine1 = nn.Linear(prod(env.observation_space.shape), hidden_units)
         self.affine2 = nn.Linear(hidden_units, hidden_units2)
-
 
         # actor's layer
         self.action_head = nn.Linear(hidden_units2, env.action_space.n)
@@ -207,7 +211,8 @@ def finish_episode():
         advantage = R - value.item()  # calculating advantage, value.item() = the state value we got
 
         # calculate actor (policy) loss
-        policy_losses.append(-log_prob * advantage)  #
+        entropy_regularization = prod(env.observation_space.shape)
+        policy_losses.append(-log_prob * advantage + entropy_regularization)  #
 
         # calculate critic (value) loss using L1 smooth loss
         value_losses.append(F.smooth_l1_loss(value, torch.tensor([R])))  # l1 smoothed absolute error
@@ -255,7 +260,6 @@ def main():
             # select action from policy
             # print(f"{i_episode}, {t} - selecting action")
             action = select_action(state)
-
 
             # take the action
             if render:
@@ -331,8 +335,8 @@ def play():
 
 
     i = 0
-    env.render = renderTest
     state = env.reset(new_grid=False, new_start=False, new_goal=False)
+    env.render = renderTest
     wins = 0
     total = 0
     while True:
@@ -340,7 +344,7 @@ def play():
         state = state.flatten()
         state = torch.from_numpy(state).float()
         probs, _ = model(state)
-        action = probs.argmax().item()
+        #action = probs.argmax().item()
         m = Categorical(probs)
         action = m.sample().item()
 
@@ -349,17 +353,19 @@ def play():
         time.sleep(0.1)
         state, reward, done = env.step(action)
 
+        n_steps_to_win = []
         i += 1
         if done or i > max_allowed_steps:  # Complete or give up, max 50 steps
             state = env.reset(new_grid=False)
             if i <= max_allowed_steps:
                 wins += 1
+                n_steps_to_win.append(i)
             total += 1
             i = 0
             print(f'wins: {wins} attempts: {total}')
         if total == test_size:
             break
-
+    print("Average number of steps to win", sum(n_steps_to_win)/len(n_steps_to_win))
 
 def is_solved(eps=100):
     """Convergence test over arg 'eps' episodes
@@ -399,5 +405,10 @@ def is_solved(eps=100):
 
 
 if __name__ == '__main__':
+    helper = Embedding()
+    state = env.reset(new_grid=False)
+    state = torch.from_numpy(state)
+    helper(state)
+
     main()  # training the model until convergence
     play()  # evaluation/testing the final model, renders the output
