@@ -30,14 +30,14 @@ Map = np.array([[1, 0, 0, 0, 0, 2, 0, 1, 0, 1],
                  [1, 0, 1, 0, 1, 3, 1, 1, 0, 1]])
 
 n_steps_givup = 40  # Number of steps before giving up  #max steps allowed in train2
-N_EPISODES = 8000  # Total number of training episodes
+N_EPISODES = 15000  # Total number of training episodes
 K = 10
 test_size = 100 #number of test attempts
 learning_rate = 3e-2
 gamma = 0.99
 seed = 0  # 543
 max_allowed_steps = n_steps_givup #max steps allowed in test
-
+regu_scaler = 0.002
 fps = 0
 render = False
 renderTest = True
@@ -88,6 +88,7 @@ class Embedding(nn.Module):
 
         # action & reward buffer
         self.saved_actions = []
+        self.saved_probabilities_of_actions = []
         self.rewards = []
         shape_of_board = (env.observation_space.shape[1], env.observation_space.shape[2])
         self.v_current = torch.zeros(shape_of_board)
@@ -98,6 +99,8 @@ class Embedding(nn.Module):
         """
 
         """
+        x = x.flatten().float() #vores affine lag er .dtype = float32
+
         x = F.relu(self.affine1(x))
         x = F.relu(self.affine2(x))
 
@@ -110,11 +113,14 @@ class Embedding(nn.Module):
 
         #value iteration
         for k in range(K):
-            for i, j in states:
-                for i_dot, j_dot in self.DIRS:
-
-                    self.v_next[i, j] = torch.max(self.v_current[i, j],torch.max([self.v_current[i, j] + r_in - r_out]))
+            for i in range(env.observation_space.shape[1]):
+                 for j in range(env.observation_space.shape[2]):
+                    for i_dot, j_dot in env.DIRS: #i_dot and j_dot DOES NOT CONTAIN COORDINATES only relative positions to i, j
+                        if env.observation_space.shape[1] > i+i_dot and i+i_dot>=0 and env.observation_space.shape[2] > j+j_dot and j+j_dot>=0: #mindre eller ligmed pga størrelsen af self.v matrissen
+                            self.v_next[i, j] = torch.max(self.v_current[i, j],torch.max([self.v_current[i+i_dot, j+j_dot] + r_in[i+i_dot, j+j_dot] - r_out[i+i_dot, j+j_dot]]))
             self.v_current = self.v_next
+
+
 
         return r_in, r_out, #p
 
@@ -142,7 +148,7 @@ class Policy(nn.Module):
         # action & reward buffer
         self.saved_actions = []
         self.rewards = []
-
+        self.saved_probabilities_of_actions = []
     def forward(self, x):
         """
         forward of both actor and critic
@@ -183,6 +189,7 @@ def select_action(state):
 
     # save to action buffer
     model.saved_actions.append(SavedAction(m.log_prob(action), state_value))
+    model.saved_probabilities_of_actions.append(probs)
 
     # the action to take (left or right)
     return action.item()
@@ -197,7 +204,7 @@ def finish_episode():
     policy_losses = []  # list to save actor (policy) loss
     value_losses = []  # list to save critic (value) loss
     returns = []  # list to save the true values
-
+    saved_probs = model.saved_probabilities_of_actions
     # calculate the true value using rewards returned from the environment
     for r in model.rewards[::-1]:
         # calculate the discounted value
@@ -207,12 +214,13 @@ def finish_episode():
     returns = torch.tensor(returns)  # laver returns om til torch tensors
     # returns = (returns - returns.mean()) / (returns.std() + eps)
 
-    for (log_prob, value), R in zip(saved_actions, returns):
+    for (log_prob, value), saved_probs, R in zip(saved_actions,saved_probs, returns):
         advantage = R - value.item()  # calculating advantage, value.item() = the state value we got
 
         # calculate actor (policy) loss
-        entropy_regularization = prod(env.observation_space.shape)
-        policy_losses.append(-log_prob * advantage + entropy_regularization)  #
+        entropy_regularization = torch.sum(torch.log2(saved_probs)*saved_probs)  #regularization
+
+        policy_losses.append(-log_prob * advantage + regu_scaler*entropy_regularization)  #policy loss
 
         # calculate critic (value) loss using L1 smooth loss
         value_losses.append(F.smooth_l1_loss(value, torch.tensor([R])))  # l1 smoothed absolute error
@@ -224,7 +232,7 @@ def finish_episode():
     loss = torch.stack(policy_losses).sum() + torch.stack(value_losses).sum()
 
     # perform backprop
-    loss.backward()
+    loss.backward(retain_graph=True)   #added retain_graph=True because of regularization
     optimizer.step()
 
     # show updated action weights
@@ -239,7 +247,7 @@ def finish_episode():
     # reset rewards and action buffer
     del model.rewards[:]
     del model.saved_actions[:]
-
+    del model.saved_probabilities_of_actions[:]
 
 def main():
     running_reward = 0
@@ -344,9 +352,9 @@ def play():
         state = state.flatten()
         state = torch.from_numpy(state).float()
         probs, _ = model(state)
-        #action = probs.argmax().item()
-        m = Categorical(probs)
-        action = m.sample().item()
+        action = probs.argmax().item()
+        #m = Categorical(probs)
+        #action = m.sample().item()
 
         #vi bliver stuck i den samme position, derfor performer den bedre uden argmax
         # take action
@@ -405,10 +413,10 @@ def is_solved(eps=100):
 
 
 if __name__ == '__main__':
-    helper = Embedding()
-    state = env.reset(new_grid=False)
-    state = torch.from_numpy(state)
-    helper(state)
+    #helper = Embedding()
+    #state = env.reset(new_grid=False)
+    #state = torch.from_numpy(state)
+    #helper(state)
 
     main()  # training the model until convergence
     play()  # evaluation/testing the final model, renders the output
