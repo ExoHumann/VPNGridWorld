@@ -30,7 +30,7 @@ Map = np.array([[1, 0, 0, 0, 0, 2, 0, 1, 0, 1],
                  [1, 0, 1, 0, 1, 3, 1, 1, 0, 1]])
 
 n_steps_givup = 40  # Number of steps before giving up  #max steps allowed in train2
-N_EPISODES = 15000  # Total number of training episodes
+N_EPISODES = 7000  # Total number of training episodes
 K = 10
 test_size = 100 #number of test attempts
 learning_rate = 3e-2
@@ -69,47 +69,60 @@ class Embedding(nn.Module):
         super(Embedding, self).__init__()
         hidden_units = 32
         hidden_units2 = 64
-        output_dims = env.observation_space.shape[1]*env.observation_space.shape[2]
-
+        n_state_dims = env.observation_space.shape[1]*env.observation_space.shape[2]
+        n_actions = len(env.DIRS)
         #input should contain
         self.affine1 = nn.Linear(prod(env.observation_space.shape), hidden_units)
         self.affine2 = nn.Linear(hidden_units, hidden_units2)
 
-
         # r_outs's head
-        self.r_out = nn.Linear(hidden_units2, output_dims)
+        self.r_out = nn.Linear(hidden_units2, n_state_dims)
 
         # r_in's head
-        self.r_in = nn.Linear(hidden_units2, output_dims)
+        self.r_in = nn.Linear(hidden_units2, n_state_dims)
 
         # transition probability head
         #self.p = nn.Linear(hidden_units2, output_dims)
+
+        #policy network stuff
+        hidden_units_policy1 = 32
+        self.policyNetwork1 = nn.Linear(n_state_dims*3, hidden_units_policy1) #3 because we dont use the transition probabilities
+        self.policyHead = nn.Linear(hidden_units_policy1, n_actions)
 
 
         # action & reward buffer
         self.saved_actions = []
         self.saved_probabilities_of_actions = []
         self.rewards = []
-        shape_of_board = (env.observation_space.shape[1], env.observation_space.shape[2])
-        self.v_current = torch.zeros(shape_of_board)
-        self.v_next = torch.zeros(shape_of_board)
+        self.shape_of_board = (env.observation_space.shape[1], env.observation_space.shape[2])
+        self.v_current = torch.zeros(self.shape_of_board)
+        self.v_next = torch.zeros(self.shape_of_board)
 
         #self.values = np.zeros(())
     def forward(self, x):
         """
-
+        Assumes x to be a (3, i, j) shape
         """
-        x = x.flatten().float() #vores affine lag er .dtype = float32
+
+        current_position = (x[1]==1).nonzero()
+
+        x = x.flatten()
+        x = torch.from_numpy(x).float()
 
         x = F.relu(self.affine1(x))
         x = F.relu(self.affine2(x))
 
 
         r_out = self.r_out(x)
+        r_out = torch.reshape(r_out, self.shape_of_board)
+
 
         r_in = self.r_out(x)
+        r_in = torch.reshape(r_in, self.shape_of_board)
+
 
         #p = self.p(x)
+
 
         #value iteration
         for k in range(K):
@@ -117,14 +130,19 @@ class Embedding(nn.Module):
                  for j in range(env.observation_space.shape[2]):
                     for i_dot, j_dot in env.DIRS: #i_dot and j_dot DOES NOT CONTAIN COORDINATES only relative positions to i, j
                         if env.observation_space.shape[1] > i+i_dot and i+i_dot>=0 and env.observation_space.shape[2] > j+j_dot and j+j_dot>=0: #mindre eller ligmed pga størrelsen af self.v matrissen
-                            self.v_next[i, j] = torch.max(self.v_current[i, j],torch.max([self.v_current[i+i_dot, j+j_dot] + r_in[i+i_dot, j+j_dot] - r_out[i+i_dot, j+j_dot]]))
+                            self.v_next[i, j] = torch.max(self.v_current[i, j], torch.max(self.v_current[i+i_dot, j+j_dot] + r_in[i+i_dot, j+j_dot] - r_out[i+i_dot, j+j_dot]))
             self.v_current = self.v_next
 
+        #policy
+        input_to_policy = torch.cat((self.v_current.flatten(), r_out.flatten(), r_in.flatten()), 0)
+        action_logits = self.policyNetwork1(input_to_policy)
+        action_logits = self.policyHead(action_logits)
+        action_prob = F.softmax(action_logits, dim=-1)
 
+        #value at current state
 
-        return r_in, r_out, #p
-
-
+        state_values = self.v_current[current_position]
+        return action_prob, state_values
 
 
 class Policy(nn.Module):
@@ -153,6 +171,9 @@ class Policy(nn.Module):
         """
         forward of both actor and critic
         """
+        x = x.flatten()
+        x = torch.from_numpy(x).float()
+
         x = F.relu(self.affine1(x))
         x = F.relu(self.affine2(x))
 
@@ -171,14 +192,7 @@ class Policy(nn.Module):
         return action_prob, state_values
 
 
-model = Policy()
-optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-eps = np.finfo(np.float32).eps.item()
-
-
 def select_action(state):
-    state = state.flatten()
-    state = torch.from_numpy(state).float()
     probs, state_value = model(state)
 
     # create a categorical distribution over the list of probabilities of actions
@@ -352,9 +366,9 @@ def play():
         state = state.flatten()
         state = torch.from_numpy(state).float()
         probs, _ = model(state)
-        action = probs.argmax().item()
-        #m = Categorical(probs)
-        #action = m.sample().item()
+        #action = probs.argmax().item()
+        m = Categorical(probs)
+        action = m.sample().item()
 
         #vi bliver stuck i den samme position, derfor performer den bedre uden argmax
         # take action
@@ -413,10 +427,12 @@ def is_solved(eps=100):
 
 
 if __name__ == '__main__':
-    #helper = Embedding()
-    #state = env.reset(new_grid=False)
-    #state = torch.from_numpy(state)
-    #helper(state)
+    model = Embedding()
+    #model = Policy()
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    eps = np.finfo(np.float32).eps.item()
+
+
 
     main()  # training the model until convergence
     play()  # evaluation/testing the final model, renders the output
