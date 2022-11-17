@@ -13,7 +13,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.distributions import Categorical
-
+torch.autograd.set_detect_anomaly(True)
 from GridWorld import GridWorld
 from math import prod
 import time
@@ -30,8 +30,9 @@ Map = np.array([[1, 0, 0, 0, 0, 2, 0, 1, 0, 1],
                  [1, 0, 1, 0, 1, 3, 1, 1, 0, 1]])
 
 n_steps_givup = 40  # Number of steps before giving up  #max steps allowed in train2
-N_EPISODES = 7000  # Total number of training episodes
-K = 10
+#n_step is also the number of states saved to the memory buffer before deletion
+N_EPISODES = 1  # Total number of training episodes
+K = 2
 test_size = 100 #number of test attempts
 learning_rate = 3e-2
 gamma = 0.99
@@ -49,7 +50,6 @@ wall_pct = 0.0
 map_size = 5
 map_size = [map_size] * 4
 non_diag = False
-
 
 # env = gym.make('CartPole-v1', render_mode="rgb_array")
 if seed:
@@ -69,8 +69,11 @@ class Embedding(nn.Module):
         super(Embedding, self).__init__()
         hidden_units = 32
         hidden_units2 = 64
-        n_state_dims = env.observation_space.shape[1]*env.observation_space.shape[2]
+        self.n_observation1 = env.observation_space.shape[1]
+        self.n_observation2 = env.observation_space.shape[2]
+        n_state_dims = self.n_observation1*self.n_observation2
         n_actions = len(env.DIRS)
+
         #input should contain
         self.affine1 = nn.Linear(prod(env.observation_space.shape), hidden_units)
         self.affine2 = nn.Linear(hidden_units, hidden_units2)
@@ -117,7 +120,7 @@ class Embedding(nn.Module):
         r_out = torch.reshape(r_out, self.shape_of_board)
 
 
-        r_in = self.r_out(x)
+        r_in = self.r_in(x)
         r_in = torch.reshape(r_in, self.shape_of_board)
 
 
@@ -125,13 +128,19 @@ class Embedding(nn.Module):
 
 
         #value iteration
+        self.v_current = torch.zeros(self.shape_of_board)
+        self.v_next = torch.zeros(self.shape_of_board)
+
         for k in range(K):
-            for i in range(env.observation_space.shape[1]):
-                 for j in range(env.observation_space.shape[2]):
+            for i in range(self.n_observation1):
+                 for j in range(self.n_observation2):
                     for i_dot, j_dot in env.DIRS: #i_dot and j_dot DOES NOT CONTAIN COORDINATES only relative positions to i, j
-                        if env.observation_space.shape[1] > i+i_dot and i+i_dot>=0 and env.observation_space.shape[2] > j+j_dot and j+j_dot>=0: #mindre eller ligmed pga størrelsen af self.v matrissen
+                        if self.n_observation1 > i+i_dot and i+i_dot>=0 and self.n_observation2 > j+j_dot and j+j_dot>=0: #mindre eller ligmed pga størrelsen af self.v matrissen
                             self.v_next[i, j] = torch.max(self.v_current[i, j], torch.max(self.v_current[i+i_dot, j+j_dot] + r_in[i+i_dot, j+j_dot] - r_out[i+i_dot, j+j_dot]))
             self.v_current = self.v_next
+
+
+
 
         #policy
         input_to_policy = torch.cat((self.v_current.flatten(), r_out.flatten(), r_in.flatten()), 0)
@@ -142,6 +151,7 @@ class Embedding(nn.Module):
         #value at current state
 
         state_values = self.v_current[current_position]
+
         return action_prob, state_values
 
 
@@ -246,9 +256,9 @@ def finish_episode():
     loss = torch.stack(policy_losses).sum() + torch.stack(value_losses).sum()
 
     # perform backprop
+
     loss.backward(retain_graph=True)   #added retain_graph=True because of regularization
     optimizer.step()
-
     # show updated action weights
     # print(model.get_parameter("action_head.weight"))
     # grads = []
@@ -363,8 +373,6 @@ def play():
     total = 0
     while True:
         # pick best action
-        state = state.flatten()
-        state = torch.from_numpy(state).float()
         probs, _ = model(state)
         #action = probs.argmax().item()
         m = Categorical(probs)
