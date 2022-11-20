@@ -32,7 +32,7 @@ Map = np.array([[1, 0, 0, 0, 0, 2, 0, 1, 0, 1],
 n_steps_givup = 40  # Number of steps before giving up  #max steps allowed in train2
 #n_step is also the number of states saved to the memory buffer before deletion
 N_EPISODES = 1  # Total number of training episodes
-K = 2
+K = 1  #num planning iterations
 test_size = 100 #number of test attempts
 learning_rate = 3e-2
 gamma = 0.99
@@ -138,8 +138,6 @@ class Embedding(nn.Module):
                         if self.n_observation1 > i+i_dot and i+i_dot>=0 and self.n_observation2 > j+j_dot and j+j_dot>=0: #mindre eller ligmed pga størrelsen af self.v matrissen
                             self.v_next[i, j] = torch.max(self.v_current[i, j], torch.max(self.v_current[i+i_dot, j+j_dot] + r_in[i+i_dot, j+j_dot] - r_out[i+i_dot, j+j_dot]))
             self.v_current = self.v_next
-
-
 
 
         #policy
