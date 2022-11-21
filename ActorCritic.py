@@ -32,37 +32,25 @@ learning_rate = 3e-2
 gamma = 0.99
 seed = 0#543
 fps = 0
-render = False
+render = True
 if fps:
     render = True
 log_interval = 40
 
 wall_pct = 0.0
-map_size = 5
-map_size = [map_size]*4
+map_size = 4
+map = [map_size]*4
 non_diag = True
 
-# parser = argparse.ArgumentParser(description='PyTorch actor-critic example')
-# parser.add_argument('--gamma', type=float, default=0.99, metavar='G',
-#                     help='discount factor (default: 0.99)')
-# parser.add_argument('--seed', type=int, default=543, metavar='N',
-#                     help='random seed (default: 543)')
-# parser.add_argument('--render', action='store_true',
-#                     help='render the environment')
-# parser.add_argument('--log-interval', type=int, default=10, metavar='N',
-#                     help='interval between training status logs (default: 10)')
-# args = parser.parse_args()
 
-
-# env = gym.make('CartPole-v1', render_mode="rgb_array")
 if seed:
-    env = GridWorld(map_size=map_size, seed=seed, render=render, non_diag=non_diag, rewards=(0.0, 1.0), wall_pct=wall_pct)    
+    env = GridWorld(wall_pct=0.6, seed=seed, map=map, non_diag=True, resetter=0, space_fun=GridWorld.test)
     torch.manual_seed(seed)
 else:
-    env = GridWorld(map_size=map_size, render=render, non_diag=non_diag, rewards=(0.0, 1.0), wall_pct=wall_pct)
+    env = GridWorld(wall_pct=0.6, map=map, non_diag=True, resetter=0, space_fun=GridWorld.test)
 env.reset()
 
-env.reset_to(TUHE)
+# env.reset_to(TUHE)
 SavedAction = namedtuple('SavedAction', ['log_prob', 'value'])
 
 
@@ -188,7 +176,7 @@ def main():
     for i_episode in range(N_EPISODES): #count(1):
 
         # reset environment and episode reward
-        state = env.reset(new_grid=False)
+        state = env.reset()
         ep_reward = 0
 
         # for each episode, only run 9999 steps so that we don't
@@ -203,9 +191,10 @@ def main():
             if render:
                 time.sleep(fps)
             state, reward, done = env.step(action)
+            
 
-            # if render:
-            #     env.render()
+            if render:
+                env.render()
 
             model.rewards.append(reward)
             ep_reward += reward
@@ -234,7 +223,7 @@ def play():
     # env = GridWorld(map_size=(4,4,5,5), render=True, rewards=(0.0, 100.0))
     model.eval()
     env.render = True
-    state = env.reset(new_grid=False)
+    state = env.reset()
     wins = 0
     total = 0
 
@@ -253,12 +242,12 @@ def play():
 
         i += 1
         if done or i > 50:  # Complete or give up, max 50 steps
-            state = env.reset(new_grid=False)
+            state = env.reset()
             if i <= 50: 
                 wins += 1
             total += 1
             i = 0
-            print(f'wins: {wins} attempts: {total}')
+            print(f'wins: {wins}/{total}')
             if total == 100:
                 break
 
@@ -269,7 +258,7 @@ def is_solved(eps=100):
     """
 
     model.eval()
-    state = env.reset(new_grid=False)
+    state = env.reset()
     wins = 0
     total = 0
 
@@ -286,7 +275,7 @@ def is_solved(eps=100):
 
         i += 1
         if done:  # Complete
-            state = env.reset(new_grid=False)            
+            state = env.reset()            
             wins += 1
             i = 0
             if wins == eps:

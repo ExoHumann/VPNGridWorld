@@ -38,6 +38,9 @@ pg.init()
 pg.display.set_caption('GridWorld')
 pg.font.init()
 
+def sigmoid(x):
+    return 1 / (1 + np.exp(-x))
+
 class Vec2D():
     """Helper class for flipping coordinates and basic arithmetic.
     pygame draws by v=(x, y) and numpy indexes by p=(y, x)."""
@@ -95,7 +98,7 @@ class Display():
         self.points = points
         self.screen = pg.display.set_mode([self.W * CELL, self.H * CELL])
         self.font = pg.font.Font(None, 25)
-        self.reset(start, goal)
+        self.disp_reset(start, goal)
 
     def update(self, pos, before=None):
         if before:
@@ -111,7 +114,7 @@ class Display():
         pg.display.update(rect)
     
 
-    def reset(self, start, goal): #TODO set agent to start position on given env.
+    def disp_reset(self, start, goal): #TODO set agent to start position on given env.
         self.goal = goal
         self.screen.fill(GREY)
         
@@ -204,7 +207,7 @@ class GridWorld():
         pass
 
     def __init__(self, map=(5, 10, 5, 10), wall_pct=0.7, resetter=0,
-                rewards=(0.0, 1.0), seed=None, non_diag=False, space_fun=None):
+                rewards=(0.0, 1.0), seed=None, non_diag=False, space_fun=None, difficulty=0):
         """
         Keyword arguments:
         map_size  -- int tuple of (min_x, max_x, min_y, max_y) constraining map size.
@@ -220,6 +223,10 @@ class GridWorld():
         self.map_size = map
         self.wall_pct = wall_pct
 
+        self.state = 0 # change difficult externally
+        self.difficulty = difficulty # change size of map
+        self.display = None
+
         if seed != None:
             random.seed(seed)
         self.space_fun = space_fun if space_fun else lambda: None
@@ -234,23 +241,85 @@ class GridWorld():
         self.step_penalty, self.win_reward = rewards
         self.reach = None  # Tiles that reach goal - for resetting
         self.last_pos = None  # Last position of agent - for rendering
+        self.step_count = 0  # Number of steps taken
 
         # Define reset function
         self.reset_functions = [self.reset_grid, self.reset_start, self.reset_goal, self.reset_start_and_goal]
 
-        if isinstance(map, np.ndarray):
-            self.reset_to(map)
-            self.reset = lambda: self.reset_to(map)
-        else:
-            self.reset_grid()
-            self.set_reset(resetter)
+        # if isinstance(map, np.ndarray):
+        #     self.reset_to(map)
+        #     self.reset = lambda: self.reset_to(map)
+        # else:
+        #     self.reset_grid()
+        #     self.set_reset(resetter)
+        self.reset_grid()
+
+    def set_state(self, state: int):
+        self.state = state
+
+    def reset(self):
+        self.step_count = 0
+        if self.state == 0: # reset start (baby) - too easy? Sure, but learn to walk first
+            self.last_pos = None
+            self.grid[AGENT][self.pos.p] = 0
+            self.pos = self._random_tile(self.grid[WALL]+self.grid[GOAL], self.reach)[0]
+            self.grid[AGENT][self.pos.p] = 1
+
+            return self.grid
+        
+        if self.state == 1: # reset goal (toddler) 
+            self.grid[GOAL][self.goal.p] = 0
+
+
+        if self.state == 2:  # reset start/goal (teen)
+            self.last_pos = None
+            self.grid[AGENT][self.pos.p] = 0
+            self.grid[GOAL][self.goal.p] = 0
+
+            while True:  # Create grid
+                start, goal = self._random_tile(self.grid[WALL], n=2)
+                if reach := self._dfs_reaches(self.grid[WALL], start, goal):
+                    break
+
+            self.reach = reach
+            self.pos, self.goal = start, goal
+            self.grid[AGENT][self.pos.p] = 1
+            self.grid[GOAL][self.goal.p] = 1
+
+            return self.grid
+        
+        if self.state == 3: # reset grid (adult)
+            self.difficulty += 1
+            add = self.difficuly // 100
+            W = self.W + add  # every 100 steps, increase width by 1
+            H = self.H + add  # every 100 steps, increase height by 1
+
+            wall_pct = self.wall_pct * sigmoid(self.difficulty/1000)  
+
+            self.last_pos = None
+            self.grid, start, goal, self.reach = self._generate_grid(wall_pct)
+            self.observation_space = spaces.Box(0, 1, shape=self.grid.shape, dtype=int)
+            self.start = start
+            self.pos = start
+            self.goal = goal
+
+            return self.grid
 
 
 
+    @property
+    def resetter(self):
+        return self._resetter
+    
+    @resetter.setter
+    def resetter(self, value):
+        self.set_reset(value)
+
+        
     """Reset functions"""
-    def set_reset(self, resetter):
-        """Sets reset function given int of {0:Grid, 1:Start, 2:Goal, 3:Start and Goal}"""
-        self.reset = self.reset_functions[resetter]
+    # def set_reset(self, resetter):
+    #     """Sets reset function given int of {0:Grid, 1:Start, 2:Goal, 3:Start and Goal}"""
+    #     self.reset = self.reset_functions[resetter]
 
     def reset_grid(self):
         """Generate new grid 0"""
@@ -317,13 +386,16 @@ class GridWorld():
         err_msg = f"{action!r} ({type(action)}) invalid"
         assert self.action_space.contains(action), err_msg
 
+        self.step_count += 1
         reward = self.step_penalty
         new_pos = self.pos + self.DIRS[action]
 
         terminate = self._is_collide(new_pos, self.grid[WALL])
+        done = False
         if not terminate:
             if self.grid[GOAL][new_pos.p]:
                 terminate = True
+                done = True
                 reward = self.win_reward
 
             # Update grid
@@ -333,7 +405,10 @@ class GridWorld():
             self.last_pos = self.pos  # For rendering
             self.pos = new_pos
 
-        return self.grid, reward, terminate
+        if self.step_count > self.H * self.W:
+            done = True # give up
+
+        return self.grid, reward, done
 
     def sample(self):
         """Return random action in action_space"""
@@ -439,30 +514,7 @@ class GridWorld():
         """Returns if new_pos Vec2D is out of bounds of nparray grid or colliding with wall"""
         return pos.x < 0 or pos.x >= self.W or pos.y < 0 or pos.y >= self.H or walls[pos.p]
 
-    def process_input(self):
-        """Process user input quit/restart/step/space"""
-        for event in pg.event.get():
-            if event.type == pg.QUIT:
-                self.close(True)
 
-            elif event.type == pg.KEYDOWN:
-                if event.key == pg.K_ESCAPE:
-                    self.close(True)
-
-                if event.key == pg.K_r:
-                    if pg.key.get_pressed()[pg.K_LCTRL]:
-                        return self.reset_grid()
-                    return self.reset()
-
-                if event.key in MOVE:
-                    if (action := MOVE.index(event.key)) < len(self.DIRS):
-                        return self.step(action)
-
-                if event.key == pg.K_SPACE:
-                    try:
-                        self.space_fun(self)
-                    except:
-                        self.space_fun()  # For external functions
 
     """ Value iteration functions """
     def visit(self, action, pos):
@@ -543,15 +595,44 @@ def test(env):
     print("Done")
     env.rendering = True
 
+def process_input(env):
+    """Process user input quit/restart/step/space"""
+    for event in pg.event.get():
+        if event.type == pg.QUIT:
+            env.close(True)
+
+        elif event.type == pg.KEYDOWN:
+            if event.key == pg.K_ESCAPE:
+                env.close(True)
+
+            if event.key == pg.K_r:
+                if pg.key.get_pressed()[pg.K_LCTRL]:
+                    return env.reset_grid()
+                return env.reset()
+
+            if event.key in MOVE:
+                if (action := MOVE.index(event.key)) < len(env.DIRS):
+                    return env.step(action)
+
+            if event.key == pg.K_SPACE:
+                try:
+                    env.space_fun(env)
+                except:
+                    env.space_fun()  # For external functions
+
 
 if __name__ == "__main__":
+    clock = pg.time.Clock()
+    env = GridWorld(wall_pct=0.6, map=(5, 15, 5, 10), non_diag=True, resetter=0, space_fun=GridWorld.test)
     render = True
-    env = GridWorld(wall_pct=0.6, map=(5, 15, 5, 10), render=render, non_diag=True, resetter=0, space_fun=GridWorld.test)
     # test(env)
     while True:
-        obs = env.process_input()
+        clock.tick(30)
+        env.render()
+        obs = process_input(env)
         if type(obs) == tuple:  # step return
             s, r, done = obs
+            print(done)
             if done:
                 s = env.reset()
             if render:
@@ -561,3 +642,10 @@ if __name__ == "__main__":
             grid = obs
             if render:
                 env.render()
+
+# First initililize env
+# then reset()
+# then s, r, done =  step(action)
+# if done, s = reset()
+
+# 

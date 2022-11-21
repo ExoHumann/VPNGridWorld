@@ -30,7 +30,7 @@ def go():
     V = V_new
     env.display_values(V)
 
-env = GridWorld(map=TUHE, wall_pct=0.5, seed=42, render=True, non_diag=True, space_fun=go)
+env = GridWorld(map=TUHE, wall_pct=0.5, seed=42, non_diag=True, space_fun=go)
 # grid = env.reset()
 grid = env.grid
 _, H, W = grid.shape
