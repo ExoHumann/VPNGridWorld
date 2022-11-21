@@ -30,9 +30,9 @@ def go():
     V = V_new
     env.display_values(V)
 
-env = GridWorld(wall_pct=0.5, seed=42, render=True, non_diag=True, space_fun=go)
+env = GridWorld(map=TUHE, wall_pct=0.5, seed=42, render=True, non_diag=True, space_fun=go)
 # grid = env.reset()
-grid = env.reset_to(TUHE)
+grid = env.grid
 _, H, W = grid.shape
 # V = np.random.uniform(-10, 10, (H, W))
 V = np.zeros((H, W))
@@ -47,5 +47,5 @@ while True:
     elif type(obs) == np.ndarray:  # reset return
         grid = obs
         V = np.random.uniform(-10, 10, (H, W))
-        H, W = grid.shape
+        _, H, W = grid.shape
         V = np.zeros((H, W))
